@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -129,6 +129,10 @@ export default function App() {
   const [currentUser, setCurrentUser]     = useState(null);
   const [currentRoute, setCurrentRoute]   = useState('dashboard');
 
+  // Refs للوصول دايماً لآخر قيمة بدون stale closure
+  const fbUserRef      = useRef(null);
+  const currentUserRef = useRef(null);
+
   // Mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -173,6 +177,10 @@ export default function App() {
   // نظام الخصم — للمدير فقط
   const [discountType, setDiscountType]   = useState('percent'); // 'percent' | 'fixed'
   const [discountValue, setDiscountValue] = useState('');
+
+  // تحديث الـ Refs دايماً مع كل تغيير — يحل مشكلة stale closure في sync
+  useEffect(() => { fbUserRef.current = fbUser; }, [fbUser]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
@@ -342,9 +350,18 @@ export default function App() {
   // Sync to Cloud - منفصل حسب نوع البيانات
   // ==========================================
 
+  // ============================================================
+  // Sync Functions — تستخدم Refs لضمان آخر قيمة دايماً
+  // بتحل مشكلة stale closure الأساسية
+  // ============================================================
+
   // حفظ بيانات المنصة العامة (tenants, globalSettings)
   const syncPlatformToCloud = useCallback(async (newData) => {
-    if (!fbUser || !db) return;
+    const user = fbUserRef.current;
+    if (!user || !db) {
+      console.warn("syncPlatformToCloud: مفيش fbUser");
+      return;
+    }
     const platformRef = doc(db, 'coffee_erp_platform', 'config');
     try {
       await setDoc(platformRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
@@ -356,18 +373,27 @@ export default function App() {
         catch(e2) { console.error("❌ Platform retry failed:", e2); }
       }, 2000);
     }
-  }, [fbUser]);
+  }, []); // [] عمداً — بتقرأ من Ref مش من closure
 
   // حفظ بيانات الكافيه المحدد فقط في document الخاص بيه
   const syncToCloud = useCallback(async (newData) => {
-    if (!fbUser || !db || !currentUser?.cafeId) {
+    const user    = fbUserRef.current;
+    const cUser   = currentUserRef.current;
+    const cafeId  = cUser?.cafeId;
+
+    if (!user || !db) {
+      console.warn("syncToCloud: مفيش fbUser — بيانات محلية فقط");
+      return;
+    }
+    if (!cafeId) {
       console.warn("syncToCloud: مفيش cafeId — هيتجاهل");
       return;
     }
-    const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
+
+    const cafeRef = doc(db, 'coffee_erp_cafes', cafeId);
     try {
       await setDoc(cafeRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log("✅ Cafe", currentUser.cafeId, "saved");
+      console.log("✅ Cafe", cafeId, "saved to Firebase");
     } catch(e) {
       console.error("❌ Cafe save error:", e.code, e.message);
       setTimeout(async () => {
@@ -375,7 +401,7 @@ export default function App() {
         catch(e2) { console.error("❌ Cafe retry failed:", e2); }
       }, 2000);
     }
-  }, [fbUser, currentUser?.cafeId]);
+  }, []); // [] عمداً — بتقرأ من Refs مش من closure
 
   // ==========================================
   // *** نظام الدخول مع التحقق الآمن ***

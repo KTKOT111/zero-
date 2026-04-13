@@ -170,6 +170,10 @@ export default function App() {
   const [lastOrder, setLastOrder]                     = useState(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
 
+  // نظام الخصم — للمدير فقط
+  const [discountType, setDiscountType]   = useState('percent'); // 'percent' | 'fixed'
+  const [discountValue, setDiscountValue] = useState('');
+
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
     return cats.map(c => ({ id: c, name: c }));
@@ -270,65 +274,108 @@ export default function App() {
   }, []);
 
   // ==========================================
-  // Firestore - جلب البيانات (مسار صحيح)
+  // Firestore - جلب بيانات المنصة العامة (tenants + globalSettings)
+  // هذا الـ listener للسوبر ادمن فقط — لا يحتوي على بيانات أي كافيه
   // ==========================================
   useEffect(() => {
     if (!fbUser || !db) return;
 
-    // مسار بسيط وصحيح: collection/document
-    const docRef = doc(db, 'coffee_erp_data', 'main_database');
-
-    const unsubscribe = onSnapshot(
-      docRef,
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data.globalSettings)                        setGlobalSettings(data.globalSettings);
-          if (data.tenants)                               setTenants(data.tenants);
-          if (data.rawMaterials)                          setRawMaterials(data.rawMaterials);
-          if (data.products && data.products.length > 0)  setProducts(data.products);
-          if (data.employees)                             setEmployees(data.employees);
-          if (data.expenses)                              setExpenses(data.expenses);
-          if (data.tables)                                setTables(data.tables);
-          if (data.shifts)                                setShifts(data.shifts);
-          if (data.orders)                                setOrders(data.orders);
-          if (data.activeTableOrders)                     setActiveTableOrders(data.activeTableOrders);
-          if (data.isTaxEnabled !== undefined)            setIsTaxEnabled(data.isTaxEnabled);
-        }
-        setIsSyncing(snapshot.metadata.hasPendingWrites);
-        setIsDataLoaded(true);
-      },
-      (error) => {
-        console.error("Firestore Error:", error.code, error.message);
-        setIsDataLoaded(true);
+    const platformRef = doc(db, 'coffee_erp_platform', 'config');
+    const unsubscribe = onSnapshot(platformRef, { includeMetadataChanges: true }, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.globalSettings) setGlobalSettings(data.globalSettings);
+        if (data.tenants)        setTenants(data.tenants);
       }
-    );
+      setIsDataLoaded(true);
+    }, (error) => {
+      console.error("Platform Firestore Error:", error.code, error.message);
+      setIsDataLoaded(true);
+    });
 
     return () => unsubscribe();
   }, [fbUser]);
 
   // ==========================================
-  // Sync to Cloud - مع retry تلقائي
+  // Firestore - جلب بيانات الكافيه المحدد بعد الدخول
+  // كل كافيه له document منفصل تماماً: coffee_erp_cafes/{cafeId}
+  // لا علاقة بينهم — عزل كامل 100%
   // ==========================================
-  const syncToCloud = useCallback(async (newData) => {
-    if (!fbUser || !db) {
-      console.warn("syncToCloud: لا يوجد اتصال بـ Firebase");
-      return;
-    }
-    const docRef = doc(db, 'coffee_erp_data', 'main_database');
+  useEffect(() => {
+    if (!fbUser || !db || !currentUser?.cafeId) return;
+
+    // مسح بيانات الكافيه القديم فور تغيير الكافيه
+    setRawMaterials([]);
+    setProducts(defaultProducts);
+    setEmployees([]);
+    setExpenses([]);
+    setTables([]);
+    setShifts([]);
+    setOrders([]);
+    setActiveTableOrders({});
+    setIsTaxEnabled(false);
+
+    const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
+    const unsubscribe = onSnapshot(cafeRef, { includeMetadataChanges: true }, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.rawMaterials)                          setRawMaterials(data.rawMaterials);
+        if (data.products && data.products.length > 0)  setProducts(data.products);
+        if (data.employees)                             setEmployees(data.employees);
+        if (data.expenses)                              setExpenses(data.expenses);
+        if (data.tables)                                setTables(data.tables);
+        if (data.shifts)                                setShifts(data.shifts);
+        if (data.orders)                                setOrders(data.orders);
+        if (data.activeTableOrders)                     setActiveTableOrders(data.activeTableOrders);
+        if (data.isTaxEnabled !== undefined)            setIsTaxEnabled(data.isTaxEnabled);
+      }
+      // لو document مش موجود = كافيه جديد تماماً، البيانات الافتراضية محملة بالفعل فوق
+      setIsSyncing(snapshot.metadata.hasPendingWrites);
+    }, (error) => {
+      console.error("Cafe Firestore Error:", error.code, error.message);
+    });
+
+    return () => unsubscribe();
+  }, [fbUser, currentUser?.cafeId]);
+
+  // ==========================================
+  // Sync to Cloud - منفصل حسب نوع البيانات
+  // ==========================================
+
+  // حفظ بيانات المنصة العامة (tenants, globalSettings)
+  const syncPlatformToCloud = useCallback(async (newData) => {
+    if (!fbUser || !db) return;
+    const platformRef = doc(db, 'coffee_erp_platform', 'config');
     try {
-      await setDoc(docRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log("✅ تم الحفظ على Firebase بنجاح");
+      await setDoc(platformRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
+      console.log("✅ Platform saved");
     } catch(e) {
-      console.error("❌ خطأ في الحفظ:", e.code, e.message);
-      // إعادة المحاولة بعد 2 ثانية
+      console.error("❌ Platform save error:", e.code, e.message);
       setTimeout(async () => {
-        try { await setDoc(docRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
-        catch(e2) { console.error("❌ فشل الـ retry:", e2); }
+        try { await setDoc(platformRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
+        catch(e2) { console.error("❌ Platform retry failed:", e2); }
       }, 2000);
     }
   }, [fbUser]);
+
+  // حفظ بيانات الكافيه المحدد فقط في document الخاص بيه
+  const syncToCloud = useCallback(async (newData) => {
+    if (!fbUser || !db || !currentUser?.cafeId) {
+      console.warn("syncToCloud: مفيش cafeId — هيتجاهل");
+      return;
+    }
+    const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
+    try {
+      await setDoc(cafeRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
+      console.log("✅ Cafe", currentUser.cafeId, "saved");
+    } catch(e) {
+      console.error("❌ Cafe save error:", e.code, e.message);
+      setTimeout(async () => {
+        try { await setDoc(cafeRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
+        catch(e2) { console.error("❌ Cafe retry failed:", e2); }
+      }, 2000);
+    }
+  }, [fbUser, currentUser?.cafeId]);
 
   // ==========================================
   // *** نظام الدخول مع التحقق الآمن ***
@@ -385,8 +432,21 @@ export default function App() {
     if (currentUser.role === 'cashier' && !activeShift) return alert('يجب استلام عهدة (فتح شيفت) أولاً!');
 
     const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const cartTax = isTaxEnabled ? cartSubtotal * taxRate : 0;
-    const totalOrderAmount = cartSubtotal + cartTax;
+
+    // حساب الخصم (للمدير فقط)
+    let discountAmount = 0;
+    if (currentUser.role === 'admin' && discountValue && parseFloat(discountValue) > 0) {
+      const dv = parseFloat(discountValue);
+      if (discountType === 'percent') {
+        discountAmount = Math.min(cartSubtotal, (cartSubtotal * dv) / 100);
+      } else {
+        discountAmount = Math.min(cartSubtotal, dv);
+      }
+    }
+
+    const subtotalAfterDiscount = cartSubtotal - discountAmount;
+    const cartTax = isTaxEnabled ? subtotalAfterDiscount * taxRate : 0;
+    const totalOrderAmount = subtotalAfterDiscount + cartTax;
     const newRawMaterials = [...rawMaterials];
 
     cart.forEach(cartItem => {
@@ -400,8 +460,11 @@ export default function App() {
     });
 
     const newOrder = {
-      id: Date.now(), items: cart, subtotal: cartSubtotal, tax: cartTax,
-      total: totalOrderAmount, date: new Date().toLocaleString('ar-EG'),
+      id: Date.now(), items: cart, subtotal: cartSubtotal,
+      discountAmount, discountType: discountAmount > 0 ? discountType : null,
+      discountValue: discountAmount > 0 ? parseFloat(discountValue) : null,
+      tax: cartTax, total: totalOrderAmount,
+      date: new Date().toLocaleString('ar-EG'),
       timestamp: Date.now(),
       note: orderType === 'takeaway' ? 'تيك أواي' : `صالة - ${tables.find(t => t.id === activeTableId)?.name}`,
       shiftId: activeShift ? activeShift.id : null
@@ -424,6 +487,7 @@ export default function App() {
 
     setCart([]); setLastOrder(newOrder); setOrderType('takeaway');
     setActiveTableId(null); setIsMobileCartOpen(false);
+    setDiscountValue(''); // مسح الخصم بعد كل فاتورة
   };
 
   const financialMetrics = useMemo(() => {
@@ -486,7 +550,7 @@ export default function App() {
   const saveGlobalSettings = (e) => {
     e.preventDefault();
     const updated = { ...globalSettings, appName: formData.appName };
-    setGlobalSettings(updated); syncToCloud({ globalSettings: updated }); closeModal();
+    setGlobalSettings(updated); syncPlatformToCloud({ globalSettings: updated }); closeModal();
   };
 
   const saveTenant = (e) => {
@@ -495,10 +559,10 @@ export default function App() {
       if (tenants.find(t => t.id === formData.id)) { alert('كود الكافيه موجود بالفعل!'); return; }
       const updated = [...tenants, { ...formData, status: 'active' }];
       delete updated[updated.length - 1].isNew;
-      setTenants(updated); syncToCloud({ tenants: updated });
+      setTenants(updated); syncPlatformToCloud({ tenants: updated });
     } else {
       const updated = tenants.map(t => t.id === formData.id ? { ...t, ...formData } : t);
-      setTenants(updated); syncToCloud({ tenants: updated });
+      setTenants(updated); syncPlatformToCloud({ tenants: updated });
     }
     closeModal();
   };
@@ -844,7 +908,7 @@ export default function App() {
                                 <td className="p-5 text-slate-600 dark:text-slate-300">{cafe.subscriptionEnds}</td>
                                 <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td>
                                 <td className="p-5 text-center flex justify-center gap-2">
-                                  <button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncToCloud({ tenants: u }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition-colors">تبديل</button>
+                                  <button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition-colors">تبديل</button>
                                   <button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button>
                                 </td>
                               </tr>
@@ -916,7 +980,13 @@ export default function App() {
                     {/* شريط السلة السفلي - موبايل */}
                     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 p-3 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 flex justify-between items-center">
                       <div className="font-black text-base text-indigo-600 dark:text-indigo-400">
-                        {(cart.reduce((s, i) => s + (i.price * i.quantity), 0) * (isTaxEnabled ? 1.14 : 1)).toFixed(2)} ج
+                        {(() => {
+                          const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+                          const dv = parseFloat(discountValue) || 0;
+                          const disc = currentUser.role === 'admin' && dv > 0
+                            ? (discountType === 'percent' ? Math.min(sub, sub * dv / 100) : Math.min(sub, dv)) : 0;
+                          return ((sub - disc) * (isTaxEnabled ? 1.14 : 1)).toFixed(2);
+                        })()} ج
                       </div>
                       <button onClick={() => setIsMobileCartOpen(true)} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg">
                         <ShoppingCart size={17}/> السلة ({cart.length})
@@ -954,10 +1024,84 @@ export default function App() {
                         }
                       </div>
                       <div className="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700 lg:rounded-b-3xl shrink-0">
-                        <div className="flex justify-between items-center font-black text-2xl mb-5 text-slate-800 dark:text-white">
-                          <span>الإجمالي:</span>
-                          <span className="text-indigo-600 dark:text-indigo-400">{(cart.reduce((s, i) => s + (i.price * i.quantity), 0) * (isTaxEnabled ? 1.14 : 1)).toFixed(2)} ج</span>
-                        </div>
+
+                        {/* ===== قسم الخصم — للمدير فقط ===== */}
+                        {currentUser.role === 'admin' && cart.length > 0 && (
+                          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800">
+                            <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                              <Receipt size={13}/> تطبيق خصم (صلاحية المدير)
+                            </p>
+                            <div className="flex gap-2">
+                              {/* نوع الخصم */}
+                              <div className="flex bg-white dark:bg-slate-800 rounded-xl border border-amber-200 dark:border-amber-800 p-0.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setDiscountType('percent')}
+                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'percent' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}
+                                >%</button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDiscountType('fixed')}
+                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'fixed' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}
+                                >ج</button>
+                              </div>
+                              {/* قيمة الخصم */}
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={discountValue}
+                                onChange={e => setDiscountValue(e.target.value)}
+                                placeholder={discountType === 'percent' ? 'نسبة % (مثال: 10)' : 'مبلغ ثابت (ج)'}
+                                className="flex-1 p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 outline-none focus:border-amber-500 placeholder:text-amber-300 dark:placeholder:text-amber-700 text-center"
+                              />
+                              {/* زر مسح الخصم */}
+                              {discountValue && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDiscountValue('')}
+                                  className="p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-500 hover:bg-amber-100 transition-colors"
+                                ><X size={14}/></button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ===== ملخص الأسعار ===== */}
+                        {(() => {
+                          const subtotal = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+                          const dv = parseFloat(discountValue) || 0;
+                          const discountAmt = currentUser.role === 'admin' && dv > 0
+                            ? (discountType === 'percent' ? Math.min(subtotal, subtotal * dv / 100) : Math.min(subtotal, dv))
+                            : 0;
+                          const afterDiscount = subtotal - discountAmt;
+                          const tax = isTaxEnabled ? afterDiscount * 0.14 : 0;
+                          const total = afterDiscount + tax;
+                          return (
+                            <div className="space-y-1.5 mb-4">
+                              <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400">
+                                <span>المجموع الفرعي:</span>
+                                <span>{subtotal.toFixed(2)} ج</span>
+                              </div>
+                              {discountAmt > 0 && (
+                                <div className="flex justify-between text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                  <span>الخصم {discountType === 'percent' ? `(${dv}%)` : '(ثابت)'}:</span>
+                                  <span>- {discountAmt.toFixed(2)} ج</span>
+                                </div>
+                              )}
+                              {isTaxEnabled && (
+                                <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400">
+                                  <span>ضريبة (14%):</span>
+                                  <span>{tax.toFixed(2)} ج</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between items-center font-black text-2xl pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
+                                <span>الإجمالي:</span>
+                                <span className="text-indigo-600 dark:text-indigo-400">{total.toFixed(2)} ج</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {orderType === 'dine_in' && activeTableId ? (
                           <div className="flex gap-3">
                             <button onClick={() => { const u = { ...activeTableOrders, [activeTableId]: cart }; setActiveTableOrders(u); syncToCloud({ activeTableOrders: u }); setCart([]); setActiveTableId(null); setOrderType('takeaway'); setIsMobileCartOpen(false); }} disabled={cart.length === 0} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm"><Save size={17}/> حفظ (تعليق)</button>
@@ -1256,7 +1400,17 @@ export default function App() {
                   <p className="text-xs font-bold mb-4 text-slate-500">إيصال رقم: {lastOrder.id.toString().slice(-5)}</p>
                   <p className="text-[11px] font-bold border-y-2 border-dashed border-slate-300 py-2 mb-4">{lastOrder.date}</p>
                   <div className="space-y-2 mb-5 text-right px-2">{lastOrder.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm font-bold"><span>{i.quantity}x {i.name}</span><span>{i.price * i.quantity}</span></div>)}</div>
-                  <div className="flex justify-between font-black text-2xl border-t-2 border-slate-800 pt-4 mt-4"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)}</span></div>
+                  <div className="border-t border-dashed border-slate-300 pt-3 space-y-1.5 mb-3">
+                    <div className="flex justify-between text-sm font-bold text-slate-600"><span>المجموع:</span><span>{lastOrder.subtotal?.toFixed(2)}</span></div>
+                    {lastOrder.discountAmount > 0 && (
+                      <div className="flex justify-between text-sm font-black text-emerald-600">
+                        <span>خصم {lastOrder.discountType === 'percent' ? `${lastOrder.discountValue}%` : 'ثابت'}:</span>
+                        <span>- {lastOrder.discountAmount?.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {lastOrder.tax > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>ضريبة (14%):</span><span>{lastOrder.tax?.toFixed(2)}</span></div>}
+                  </div>
+                  <div className="flex justify-between font-black text-2xl border-t-2 border-slate-800 pt-4 mt-2"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)}</span></div>
                   <p className="text-[10px] mt-8 text-slate-500 font-bold">الكاشير: {currentUser.name}</p>
                 </div>
                 <button onClick={() => window.print()} className="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 no-print shadow-lg text-lg transition-colors"><Printer size={18}/> طباعة الإيصال</button>

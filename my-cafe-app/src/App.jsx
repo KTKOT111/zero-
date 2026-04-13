@@ -125,6 +125,8 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded]   = useState(false);
   const [isOnline, setIsOnline]           = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
+  const [syncStatus, setSyncStatus]       = useState('idle'); // 'idle' | 'saving' | 'success' | 'error'
+  const [syncError, setSyncError]         = useState('');
   const [isDarkMode, setIsDarkMode]       = useState(false);
   const [currentUser, setCurrentUser]     = useState(null);
   const [currentRoute, setCurrentRoute]   = useState('dashboard');
@@ -346,62 +348,63 @@ export default function App() {
     return () => unsubscribe();
   }, [fbUser, currentUser?.cafeId]);
 
-  // ==========================================
-  // Sync to Cloud - منفصل حسب نوع البيانات
-  // ==========================================
-
   // ============================================================
-  // Sync Functions — تستخدم Refs لضمان آخر قيمة دايماً
-  // بتحل مشكلة stale closure الأساسية
+  // SYNC FUNCTIONS — الحل النهائي
+  // بتستخدم Refs مباشرة — لا يوجد stale closure إطلاقاً
+  // db هو module-level variable ثابت لا يتغير
   // ============================================================
 
-  // حفظ بيانات المنصة العامة (tenants, globalSettings)
+  // حفظ بيانات المنصة (tenants + globalSettings) — للسوبر ادمن
   const syncPlatformToCloud = useCallback(async (newData) => {
-    const user = fbUserRef.current;
-    if (!user || !db) {
-      console.warn("syncPlatformToCloud: مفيش fbUser");
-      return;
-    }
-    const platformRef = doc(db, 'coffee_erp_platform', 'config');
-    try {
-      await setDoc(platformRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log("✅ Platform saved");
-    } catch(e) {
-      console.error("❌ Platform save error:", e.code, e.message);
-      setTimeout(async () => {
-        try { await setDoc(platformRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
-        catch(e2) { console.error("❌ Platform retry failed:", e2); }
-      }, 2000);
-    }
-  }, []); // [] عمداً — بتقرأ من Ref مش من closure
+    const currentFbUser = fbUserRef.current;
+    if (!db) { console.error("❌ db غير موجود"); return; }
+    if (!currentFbUser) { console.error("❌ fbUser غير موجود — مش مسجل دخول"); return; }
 
-  // حفظ بيانات الكافيه المحدد فقط في document الخاص بيه
+    console.log("🔄 جاري حفظ بيانات المنصة...");
+    const ref = doc(db, 'coffee_erp_platform', 'config');
+    try {
+      await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
+      console.log("✅ تم حفظ بيانات المنصة بنجاح");
+    } catch(err) {
+      console.error("❌ فشل حفظ المنصة:", err.code, err.message);
+      if (err.code === 'permission-denied') {
+        console.error("🔴 PERMISSION DENIED — يجب تعديل Firestore Rules");
+      }
+    }
+  }, []);
+
+  // حفظ بيانات الكافيه — لكل كافيه في document منفصل
   const syncToCloud = useCallback(async (newData) => {
-    const user    = fbUserRef.current;
-    const cUser   = currentUserRef.current;
-    const cafeId  = cUser?.cafeId;
+    const currentFbUser    = fbUserRef.current;
+    const currentCafeUser  = currentUserRef.current;
+    const cafeId           = currentCafeUser?.cafeId;
 
-    if (!user || !db) {
-      console.warn("syncToCloud: مفيش fbUser — بيانات محلية فقط");
-      return;
-    }
-    if (!cafeId) {
-      console.warn("syncToCloud: مفيش cafeId — هيتجاهل");
-      return;
-    }
+    if (!db) { console.error("❌ db غير موجود"); return; }
+    if (!currentFbUser) { console.error("❌ fbUser = null — الـ Auth لم يكتمل بعد"); return; }
+    if (!cafeId) { console.warn("⚠️ cafeId = null — مش مطلوب حفظ (super_admin أو customer)"); return; }
 
-    const cafeRef = doc(db, 'coffee_erp_cafes', cafeId);
+    console.log(`🔄 جاري حفظ بيانات كافيه [${cafeId}]...`, Object.keys(newData));
+    setSyncStatus('saving');
+    const ref = doc(db, 'coffee_erp_cafes', cafeId);
     try {
-      await setDoc(cafeRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log("✅ Cafe", cafeId, "saved to Firebase");
-    } catch(e) {
-      console.error("❌ Cafe save error:", e.code, e.message);
-      setTimeout(async () => {
-        try { await setDoc(cafeRef, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
-        catch(e2) { console.error("❌ Cafe retry failed:", e2); }
-      }, 2000);
+      await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
+      console.log(`✅ تم حفظ كافيه [${cafeId}] بنجاح على Firebase`);
+      setSyncStatus('success');
+      setSyncError('');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch(err) {
+      console.error(`❌ فشل حفظ كافيه [${cafeId}]:`, err.code, err.message);
+      setSyncStatus('error');
+      setSyncError(err.code === 'permission-denied'
+        ? 'permission-denied: عدّل Firestore Rules'
+        : err.code === 'unavailable'
+        ? 'offline: سيتزامن عند عودة الاتصال'
+        : err.message);
+      if (err.code === 'permission-denied') {
+        console.error("🔴 PERMISSION DENIED — يجب تعديل Firestore Security Rules");
+      }
     }
-  }, []); // [] عمداً — بتقرأ من Refs مش من closure
+  }, []);
 
   // ==========================================
   // *** نظام الدخول مع التحقق الآمن ***
@@ -637,15 +640,33 @@ export default function App() {
           .owner-reveal { animation: slideDown 0.3s ease; }
         `}</style>
 
-        {/* شريط حالة الاتصال */}
-        <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all duration-300 ${!isOnline ? 'bg-rose-600 text-white' : isSyncing ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'}`}>
+        {/* شريط حالة الاتصال والـ Sync */}
+        <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all duration-300
+          ${!isOnline ? 'bg-rose-600 text-white'
+          : syncStatus === 'error' ? 'bg-rose-600 text-white'
+          : syncStatus === 'saving' ? 'bg-amber-500 text-white'
+          : syncStatus === 'success' ? 'bg-emerald-500 text-white'
+          : isSyncing ? 'bg-amber-500 text-white'
+          : fbUser ? 'bg-emerald-600 text-white'
+          : 'bg-slate-500 text-white'}`}>
           <div className="flex items-center gap-1.5">
-            {!isOnline ? <WifiOff size={13}/> : isSyncing ? <RefreshCw size={13} className="animate-spin"/> : <Wifi size={13}/>}
-            <span>{!isOnline ? 'أوفلاين - سيتم الرفع لاحقاً' : isSyncing ? 'جاري مزامنة البيانات...' : 'متصل بالسحابة ✓'}</span>
+            {!isOnline ? <WifiOff size={13}/>
+              : syncStatus === 'saving' || isSyncing ? <RefreshCw size={13} className="animate-spin"/>
+              : syncStatus === 'error' ? <AlertCircle size={13}/>
+              : <Wifi size={13}/>}
+            <span className="truncate max-w-[260px]">
+              {!isOnline ? 'أوفلاين - سيتم الرفع عند الاتصال'
+                : syncStatus === 'error' ? `❌ خطأ: ${syncError}`
+                : syncStatus === 'saving' ? 'جاري الحفظ على Firebase...'
+                : syncStatus === 'success' ? '✅ تم الحفظ على Firebase'
+                : isSyncing ? 'جاري المزامنة...'
+                : fbUser ? `متصل بـ Firebase ✓ (${fbUser.uid?.slice(0,8)}...)`
+                : 'جاري تسجيل الدخول لـ Firebase...'}
+            </span>
           </div>
-          <span className="relative flex h-2 w-2">
-            {isOnline && !isSyncing && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>}
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${!isOnline ? 'bg-rose-300' : isSyncing ? 'bg-amber-200' : 'bg-white'}`}></span>
+          <span className="relative flex h-2 w-2 shrink-0">
+            {isOnline && syncStatus !== 'error' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>}
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${!isOnline || syncStatus === 'error' ? 'bg-rose-300' : syncStatus === 'saving' || isSyncing ? 'bg-amber-200' : 'bg-white'}`}></span>
           </span>
         </div>
 

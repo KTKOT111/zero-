@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+// 1. استيراد دوال تسجيل الدخول بالإيميل والباسورد
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { 
   Coffee, Users, Receipt, Package, LayoutDashboard, 
   LogOut, Plus, Minus, Trash2, ShoppingCart, 
@@ -63,23 +64,7 @@ try {
 }
 
 // ==========================================
-// 3. كلمات المرور المشفرة بـ SHA-256
-// ==========================================
-// باسورد السوبر ادمن الحقيقي: Ff25802580@@A
-// باسورد الكاشير السري للوصول لوضع المالك: Ff25802580
-const OWNER_PASSWORD_HASH   = "b1c4f8a2e6d3f9b0c7a4e1d8f5b2c9a6e3d0f7b4c1a8e5d2f9b6c3a0e7d4f1b8"; // Ff25802580@@A
-const TRIGGER_CODE_HASH     = "a3f8c2e5b9d4a7f0c6e3b8d1a4f7c0e5b2d9a6f3c8e1b4d7a0f5c2e9b6d3a8f1"; // Ff25802580
-
-// دالة SHA-256 حقيقية
-async function sha256(message) {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// ==========================================
-// 4. المنيو الافتراضي
+// 3. المنيو الافتراضي (تم مسح الباسوردات المكشوفة من هنا)
 // ==========================================
 const defaultProducts = [
   { id: 1, name: 'اسبريسو سينجل',      category: 'مشروبات ساخنة', price: 35, stock: 500, image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=200&q=80' },
@@ -90,7 +75,7 @@ const defaultProducts = [
 ];
 
 // ==========================================
-// 5. مكونات مساعدة
+// 4. مكونات مساعدة
 // ==========================================
 const CustomModal = ({ title, children, onClose }) => (
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
@@ -118,41 +103,34 @@ const SafeNumberInput = ({ value, onSave, colorClass }) => {
 };
 
 // ==========================================
-// 6. التطبيق الرئيسي
+// 5. التطبيق الرئيسي
 // ==========================================
 export default function App() {
   const [fbUser, setFbUser]               = useState(null);
-  const [isDataLoaded, setIsDataLoaded]   = useState(false);
+  const [isDataLoaded, setIsDataLoaded]   = useState(true); // خلينا المبدئي True عشان مفيش دخول مجهول
   const [isOnline, setIsOnline]           = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
-  const [syncStatus, setSyncStatus]       = useState('idle'); // 'idle' | 'saving' | 'success' | 'error'
+  const [syncStatus, setSyncStatus]       = useState('idle');
   const [syncError, setSyncError]         = useState('');
   const [isDarkMode, setIsDarkMode]       = useState(false);
   const [currentUser, setCurrentUser]     = useState(null);
   const [currentRoute, setCurrentRoute]   = useState('dashboard');
 
-  // Refs للوصول دايماً لآخر قيمة بدون stale closure
   const fbUserRef      = useRef(null);
   const currentUserRef = useRef(null);
 
-  // Mobile
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // *** الحالة السرية لمالك المنصة ***
-  const [showOwnerOption, setShowOwnerOption]   = useState(false);
-  const [ownerOptionTimer, setOwnerOptionTimer] = useState(null);
-
-  // شاشة الدخول
-  const [loginRole, setLoginRole]   = useState('admin');
-  const [cafeCode, setCafeCode]     = useState('');
+  // شاشة الدخول (تم تغييرها لتقبل إيميل وباسورد)
+  const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // البيانات
   const [globalSettings, setGlobalSettings]         = useState({ appName: 'كوفي سحابة' });
-  const [tenants, setTenants]                       = useState([{ id: 'c1', name: 'كوفي سكول - فرع 1', status: 'active', subscriptionEnds: '2026-12-31', adminPassword: 'admin', cashierPassword: '1234' }]);
+  const [tenants, setTenants]                       = useState([]);
   const [rawMaterials, setRawMaterials]             = useState([]);
   const [products, setProducts]                     = useState(defaultProducts);
   const [employees, setEmployees]                   = useState([]);
@@ -176,11 +154,10 @@ export default function App() {
   const [lastOrder, setLastOrder]                     = useState(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
 
-  // نظام الخصم — للمدير فقط
-  const [discountType, setDiscountType]   = useState('percent'); // 'percent' | 'fixed'
+  const [discountType, setDiscountType]   = useState('percent');
   const [discountValue, setDiscountValue] = useState('');
+  const [isHoldingTable, setIsHoldingTable] = useState(false);
 
-  // تحديث الـ Refs دايماً مع كل تغيير — يحل مشكلة stale closure في sync
   useEffect(() => { fbUserRef.current = fbUser; }, [fbUser]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
@@ -189,20 +166,11 @@ export default function App() {
     return cats.map(c => ({ id: c, name: c }));
   }, [products]);
 
-  // ==========================================
-  // Dark Mode
-  // ==========================================
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
 
-  // ==========================================
-  // مراقبة الإنترنت
-  // ==========================================
   useEffect(() => {
     setIsOnline(navigator.onLine);
     const on = () => setIsOnline(true);
@@ -213,108 +181,66 @@ export default function App() {
   }, []);
 
   // ==========================================
-  // *** منطق الكود السري لمالك المنصة ***
-  // لو كتب في خانة كود الكافيه الكود السري بالظبط
-  // هيظهر option مالك المنصة لمدة 15 ثانية فقط
-  // ==========================================
-  const handleCafeCodeChange = useCallback(async (value) => {
-    setCafeCode(value);
-    setLoginError('');
-
-    // تشفير القيمة المدخلة ومقارنتها بالهاش السري
-    if (value.length >= 10) {
-      try {
-        const hashed = await sha256(value);
-        // نقارن أول 16 حرف من الهاش كـ fingerprint
-        const inputFingerprint = hashed.substring(0, 16);
-        const triggerFingerprint = "a3f8c2e5b9d4a7f0"; // أول 16 حرف من هاش Ff25802580
-
-        if (value === 'Ff25802580') {
-          // مسح أي timer قديم
-          if (ownerOptionTimer) clearTimeout(ownerOptionTimer);
-          setShowOwnerOption(true);
-          setCafeCode(''); // نمسح الخانة فوراً لأمان أكثر
-
-          // يختفي بعد 15 ثانية
-          const timer = setTimeout(() => {
-            setShowOwnerOption(false);
-            if (loginRole === 'super_admin') setLoginRole('admin');
-          }, 15000);
-          setOwnerOptionTimer(timer);
-        }
-      } catch(e) {
-        // تجاهل أخطاء التشفير
-      }
-    }
-  }, [ownerOptionTimer, loginRole]);
-
-  // تنظيف الـ timer عند إغلاق الكمبوننت
-  useEffect(() => {
-    return () => { if (ownerOptionTimer) clearTimeout(ownerOptionTimer); };
-  }, [ownerOptionTimer]);
-
-  // ==========================================
-  // Firebase Auth
+  // Firebase Auth Listener
   // ==========================================
   useEffect(() => {
-    if (!auth || !db) { setIsDataLoaded(true); return; }
-    let isMounted = true;
-    let unsubscribeAuth = null;
-
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          try { await signInWithCustomToken(auth, __initial_auth_token); }
-          catch { await signInAnonymously(auth); }
-        } else {
-          await signInAnonymously(auth);
+    if (!auth) return;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      setFbUser(user);
+      if (user) {
+        // لو مسجل دخول، هنروح نجيب صلاحياته من فايرستور
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setCurrentUser({ 
+              name: userData.name || 'مستخدم', 
+              role: userData.role, 
+              cafeId: userData.cafeId || null, 
+              cafeName: userData.cafeName || 'المنصة' 
+            });
+            setCurrentRoute(userData.role === 'super_admin' ? 'saas_dashboard' : userData.role === 'cashier' ? 'pos' : 'dashboard');
+          } else {
+            // يوزر ملوش ملف صلاحيات
+            setLoginError("حسابك غير مفعل أو ليس له صلاحيات.");
+            auth.signOut();
+          }
+        } catch (e) {
+          console.error("خطأ في جلب الصلاحيات:", e);
         }
-      } catch(e) { console.error("Auth error:", e); }
-
-      if (isMounted) {
-        unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-          setFbUser(user);
-          setIsDataLoaded(true);
-        });
-        setTimeout(() => { if (isMounted) setIsDataLoaded(true); }, 3000);
+      } else {
+        setCurrentUser(null);
       }
-    };
-    initAuth();
-    return () => { isMounted = false; if (unsubscribeAuth) unsubscribeAuth(); };
+    });
+    return () => unsubscribeAuth();
   }, []);
 
   // ==========================================
-  // Firestore - جلب بيانات المنصة العامة (tenants + globalSettings)
-  // هذا الـ listener للسوبر ادمن فقط — لا يحتوي على بيانات أي كافيه
+  // Firestore - جلب بيانات المنصة (للسوبر أدمن فقط)
   // ==========================================
   useEffect(() => {
-    if (!fbUser || !db) return;
+    if (!fbUser || !db || currentUser?.role !== 'super_admin') return;
 
     const platformRef = doc(db, 'coffee_erp_platform', 'config');
-    const unsubscribe = onSnapshot(platformRef, { includeMetadataChanges: true }, (snapshot) => {
+    const unsubscribe = onSnapshot(platformRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data.globalSettings) setGlobalSettings(data.globalSettings);
         if (data.tenants)        setTenants(data.tenants);
       }
-      setIsDataLoaded(true);
     }, (error) => {
-      console.error("Platform Firestore Error:", error.code, error.message);
-      setIsDataLoaded(true);
+      console.error("Platform Firestore Error:", error);
     });
 
     return () => unsubscribe();
-  }, [fbUser]);
+  }, [fbUser, currentUser?.role]);
 
   // ==========================================
-  // Firestore - جلب بيانات الكافيه المحدد بعد الدخول
-  // كل كافيه له document منفصل تماماً: coffee_erp_cafes/{cafeId}
-  // لا علاقة بينهم — عزل كامل 100%
+  // Firestore - جلب بيانات الكافيه (للمدير والكاشير)
   // ==========================================
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.cafeId) return;
 
-    // مسح بيانات الكافيه القديم فور تغيير الكافيه
     setRawMaterials([]);
     setProducts(defaultProducts);
     setEmployees([]);
@@ -326,88 +252,62 @@ export default function App() {
     setIsTaxEnabled(false);
 
     const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
-    const unsubscribe = onSnapshot(cafeRef, { includeMetadataChanges: true }, (snapshot) => {
+    
+    const unsubscribe = onSnapshot(cafeRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data.rawMaterials)                          setRawMaterials(data.rawMaterials);
-        if (data.products && data.products.length > 0)  setProducts(data.products);
-        if (data.employees)                             setEmployees(data.employees);
-        if (data.expenses)                              setExpenses(data.expenses);
-        if (data.tables)                                setTables(data.tables);
-        if (data.shifts)                                setShifts(data.shifts);
-        if (data.orders)                                setOrders(data.orders);
-        if (data.activeTableOrders)                     setActiveTableOrders(data.activeTableOrders);
-        if (data.isTaxEnabled !== undefined)            setIsTaxEnabled(data.isTaxEnabled);
+        if (data.rawMaterials !== undefined)          setRawMaterials(data.rawMaterials);
+        if (data.products !== undefined)              setProducts(data.products.length > 0 ? data.products : defaultProducts);
+        if (data.employees !== undefined)             setEmployees(data.employees);
+        if (data.expenses !== undefined)              setExpenses(data.expenses);
+        if (data.tables !== undefined)                setTables(data.tables);
+        if (data.shifts !== undefined)                setShifts(data.shifts);
+        if (data.orders !== undefined)                setOrders(data.orders);
+        if (data.activeTableOrders !== undefined)     setActiveTableOrders(data.activeTableOrders);
+        if (data.isTaxEnabled !== undefined)          setIsTaxEnabled(data.isTaxEnabled);
       }
-      // لو document مش موجود = كافيه جديد تماماً، البيانات الافتراضية محملة بالفعل فوق
-      setIsSyncing(snapshot.metadata.hasPendingWrites);
+      setIsSyncing(false);
     }, (error) => {
-      console.error("Cafe Firestore Error:", error.code, error.message);
+      console.error("Cafe Firestore Error:", error.code);
     });
 
     return () => unsubscribe();
   }, [fbUser, currentUser?.cafeId]);
 
-  // ============================================================
-  // SYNC FUNCTIONS — الحل النهائي
-  // بتستخدم Refs مباشرة — لا يوجد stale closure إطلاقاً
-  // db هو module-level variable ثابت لا يتغير
-  // ============================================================
-
-  // حفظ بيانات المنصة (tenants + globalSettings) — للسوبر ادمن
   const syncPlatformToCloud = useCallback(async (newData) => {
     const currentFbUser = fbUserRef.current;
-    if (!db) { console.error("❌ db غير موجود"); return; }
-    if (!currentFbUser) { console.error("❌ fbUser غير موجود — مش مسجل دخول"); return; }
+    if (!db || !currentFbUser) return;
 
-    console.log("🔄 جاري حفظ بيانات المنصة...");
     const ref = doc(db, 'coffee_erp_platform', 'config');
     try {
       await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log("✅ تم حفظ بيانات المنصة بنجاح");
     } catch(err) {
-      console.error("❌ فشل حفظ المنصة:", err.code, err.message);
-      if (err.code === 'permission-denied') {
-        console.error("🔴 PERMISSION DENIED — يجب تعديل Firestore Rules");
-      }
+      console.error("❌ فشل حفظ المنصة:", err);
     }
   }, []);
 
-  // حفظ بيانات الكافيه — لكل كافيه في document منفصل
   const syncToCloud = useCallback(async (newData) => {
     const currentFbUser    = fbUserRef.current;
     const currentCafeUser  = currentUserRef.current;
     const cafeId           = currentCafeUser?.cafeId;
 
-    if (!db) { console.error("❌ db غير موجود"); return; }
-    if (!currentFbUser) { console.error("❌ fbUser = null — الـ Auth لم يكتمل بعد"); return; }
-    if (!cafeId) { console.warn("⚠️ cafeId = null — مش مطلوب حفظ (super_admin أو customer)"); return; }
+    if (!db || !currentFbUser || !cafeId) return;
 
-    console.log(`🔄 جاري حفظ بيانات كافيه [${cafeId}]...`, Object.keys(newData));
     setSyncStatus('saving');
     const ref = doc(db, 'coffee_erp_cafes', cafeId);
     try {
       await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      console.log(`✅ تم حفظ كافيه [${cafeId}] بنجاح على Firebase`);
       setSyncStatus('success');
       setSyncError('');
       setTimeout(() => setSyncStatus('idle'), 2000);
     } catch(err) {
-      console.error(`❌ فشل حفظ كافيه [${cafeId}]:`, err.code, err.message);
       setSyncStatus('error');
-      setSyncError(err.code === 'permission-denied'
-        ? 'permission-denied: عدّل Firestore Rules'
-        : err.code === 'unavailable'
-        ? 'offline: سيتزامن عند عودة الاتصال'
-        : err.message);
-      if (err.code === 'permission-denied') {
-        console.error("🔴 PERMISSION DENIED — يجب تعديل Firestore Security Rules");
-      }
+      setSyncError(err.message);
     }
   }, []);
 
   // ==========================================
-  // *** نظام الدخول مع التحقق الآمن ***
+  // *** نظام الدخول الجديد الآمن ***
   // ==========================================
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -415,36 +315,26 @@ export default function App() {
     setIsLoggingIn(true);
 
     try {
-      if (loginRole === 'super_admin') {
-        // التحقق من باسورد مالك المنصة بشكل آمن
-        if (password === 'Ff25802580@@A') {
-          setCurrentUser({ name: 'مالك المنصة', role: 'super_admin', cafeId: null });
-          setCurrentRoute('saas_dashboard');
-          setShowOwnerOption(false);
-          if (ownerOptionTimer) clearTimeout(ownerOptionTimer);
-        } else {
-          setLoginError('كلمة مرور مالك النظام غير صحيحة.');
-        }
-        return;
-      }
-
-      if (!cafeCode) { setLoginError('يرجى إدخال كود الكافيه.'); return; }
-      const cafe = tenants.find(t => t.id === cafeCode);
-      if (!cafe)              { setLoginError('كود الكافيه غير مسجل.'); return; }
-      if (cafe.status !== 'active') { setLoginError('اشتراك الكافيه موقوف.'); return; }
-
-      if (loginRole === 'admin' && password === cafe.adminPassword) {
-        setCurrentUser({ name: `مدير - ${cafe.name}`, role: 'admin', cafeId: cafe.id, cafeName: cafe.name });
-        setCurrentRoute('dashboard');
-      } else if (loginRole === 'cashier' && password === cafe.cashierPassword) {
-        setCurrentUser({ name: `كاشير - ${cafe.name}`, role: 'cashier', cafeId: cafe.id, cafeName: cafe.name });
-        setCurrentRoute('pos');
+      // الاعتماد على فايربيز للتحقق من الإيميل والباسورد
+      await signInWithEmailAndPassword(auth, email, password);
+      // بعد الدخول بنجاح، الـ onAuthStateChanged هيشتغل ويجيب الصلاحيات
+    } catch (error) {
+      console.error("Login Error:", error);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        setLoginError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
       } else {
-        setLoginError('كلمة المرور غير صحيحة.');
+        setLoginError('حدث خطأ أثناء تسجيل الدخول. حاول مرة أخرى.');
       }
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+    setCurrentUser(null);
+    setEmail('');
+    setPassword('');
   };
 
   // ==========================================
@@ -462,7 +352,6 @@ export default function App() {
 
     const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    // حساب الخصم (للمدير فقط)
     let discountAmount = 0;
     if (currentUser.role === 'admin' && discountValue && parseFloat(discountValue) > 0) {
       const dv = parseFloat(discountValue);
@@ -507,7 +396,6 @@ export default function App() {
     setOrders(updatedOrders);
     setActiveTableOrders(updatedActiveTableOrders);
 
-    // حفظ كل البيانات المتأثرة دفعة واحدة
     syncToCloud({
       rawMaterials: newRawMaterials,
       orders: updatedOrders,
@@ -516,7 +404,7 @@ export default function App() {
 
     setCart([]); setLastOrder(newOrder); setOrderType('takeaway');
     setActiveTableId(null); setIsMobileCartOpen(false);
-    setDiscountValue(''); // مسح الخصم بعد كل فاتورة
+    setDiscountValue('');
   };
 
   const financialMetrics = useMemo(() => {
@@ -582,15 +470,21 @@ export default function App() {
     setGlobalSettings(updated); syncPlatformToCloud({ globalSettings: updated }); closeModal();
   };
 
-  const saveTenant = (e) => {
+  const saveTenant = async (e) => {
     e.preventDefault();
     if (formData.isNew) {
       if (tenants.find(t => t.id === formData.id)) { alert('كود الكافيه موجود بالفعل!'); return; }
-      const updated = [...tenants, { ...formData, status: 'active' }];
-      delete updated[updated.length - 1].isNew;
+      
+      // هنوقف إضافة الباسوردات هنا، بعدين هنبقى نضيف نظام إنشاء الحسابات
+      const updated = [...tenants, { 
+        id: formData.id,
+        name: formData.name,
+        subscriptionEnds: formData.subscriptionEnds,
+        status: 'active' 
+      }];
       setTenants(updated); syncPlatformToCloud({ tenants: updated });
     } else {
-      const updated = tenants.map(t => t.id === formData.id ? { ...t, ...formData } : t);
+      const updated = tenants.map(t => t.id === formData.id ? { ...t, name: formData.name, subscriptionEnds: formData.subscriptionEnds } : t);
       setTenants(updated); syncPlatformToCloud({ tenants: updated });
     }
     closeModal();
@@ -633,11 +527,6 @@ export default function App() {
           .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
           .no-scrollbar::-webkit-scrollbar { display: none; }
           .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-          @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-8px); }
-            to   { opacity: 1; transform: translateY(0); }
-          }
-          .owner-reveal { animation: slideDown 0.3s ease; }
         `}</style>
 
         {/* شريط حالة الاتصال والـ Sync */}
@@ -661,7 +550,7 @@ export default function App() {
                 : syncStatus === 'success' ? '✅ تم الحفظ على Firebase'
                 : isSyncing ? 'جاري المزامنة...'
                 : fbUser ? `متصل بـ Firebase ✓ (${fbUser.uid?.slice(0,8)}...)`
-                : 'جاري تسجيل الدخول لـ Firebase...'}
+                : 'جاري الاتصال...'}
             </span>
           </div>
           <span className="relative flex h-2 w-2 shrink-0">
@@ -671,7 +560,7 @@ export default function App() {
         </div>
 
         {/* ============================================================
-             شاشة الدخول
+             شاشة الدخول (الآمنة بالإيميل والباسورد)
             ============================================================ */}
         {!currentUser ? (
           <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans transition-colors relative overflow-hidden p-4 pt-10">
@@ -680,13 +569,12 @@ export default function App() {
 
             <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border-t-8 border-indigo-600 z-10 relative">
               
-              {/* Header */}
               <div className="flex justify-between items-start mb-8">
                 <div className="flex items-center gap-4">
                   <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-2xl text-indigo-600"><Coffee size={36}/></div>
                   <div>
                     <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName || 'كوفي سحابة'}</h1>
-                    <p className="text-slate-500 font-bold text-sm">بوابة النظام الموحدة</p>
+                    <p className="text-slate-500 font-bold text-sm">بوابة الدخول الموحدة</p>
                   </div>
                 </div>
                 <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors">
@@ -694,17 +582,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* زر تصفح المنيو */}
-              <div className="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => setCurrentUser({ role: 'customer' })}
-                  className="w-full bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-600 dark:hover:text-white font-black py-4 rounded-xl transition-all shadow-sm text-lg flex justify-center items-center gap-2"
-                >
-                  <Store size={22}/> تصفح المنيو الرقمي (للزبائن)
-                </button>
-              </div>
-
-              {/* خطأ اللوجين */}
               {loginError && (
                 <div className="mb-5 p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100 dark:border-rose-800">
                   <ShieldAlert size={18}/> {loginError}
@@ -712,59 +589,22 @@ export default function App() {
               )}
 
               <form onSubmit={handleLogin} className="space-y-4">
-                {/* اختيار الدور */}
                 <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300">تسجيل دخول الموظفين</label>
-                  <select
-                    value={loginRole}
-                    onChange={(e) => { setLoginRole(e.target.value); setLoginError(''); }}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white transition-colors"
-                  >
-                    <option value="admin">إدارة الكافيه (المدير)</option>
-                    <option value="cashier">نقطة البيع (الكاشير)</option>
-                    {/* *** مالك المنصة يظهر فقط لو تم تفعيله بالكود السري *** */}
-                    {showOwnerOption && (
-                      <option value="super_admin">🔐 مالك المنصة (SaaS)</option>
-                    )}
-                  </select>
-
-                  {/* إشعار الوضع المخفي */}
-                  {showOwnerOption && (
-                    <div className="owner-reveal mt-2 p-3 bg-slate-900 dark:bg-black rounded-xl border border-indigo-500/40 flex items-center gap-2">
-                      <ShieldAlert size={14} className="text-indigo-400 shrink-0"/>
-                      <p className="text-indigo-400 text-[11px] font-black">
-                        وضع المالك مفعّل مؤقتاً — سيختفي بعد 15 ثانية
-                      </p>
-                    </div>
-                  )}
+                  <input
+                    required
+                    type="email"
+                    placeholder="البريد الإلكتروني"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-left"
+                    dir="ltr"
+                  />
                 </div>
-
-                {/* كود الكافيه — مخفي لو super_admin */}
-                {loginRole !== 'super_admin' && (
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="كود الكافيه (مثال: c1)"
-                      value={cafeCode}
-                      onChange={(e) => handleCafeCodeChange(e.target.value)}
-                      className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors"
-                      autoComplete="off"
-                    />
-                  </div>
-                )}
-
-                {/* كلمة المرور */}
                 <div>
                   <input
                     required
                     type="password"
-                    placeholder={
-                      loginRole === 'super_admin'
-                        ? "كلمة مرور مالك المنصة"
-                        : loginRole === 'admin'
-                        ? "كلمة مرور المدير"
-                        : "كلمة مرور الكاشير"
-                    }
+                    placeholder="كلمة المرور"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors tracking-widest text-left"
@@ -786,15 +626,13 @@ export default function App() {
           </div>
 
         ) : currentUser.role === 'customer' ? (
-          /* ============================================================
-               شاشة المنيو الرقمي للزبائن
-              ============================================================ */
+          // شاشة الزبائن (كما هي)
           <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full transition-colors overflow-y-auto custom-scrollbar pb-10 pt-7">
             <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
               <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee/> منيو {globalSettings.appName || 'الكافيه'}</h1>
               <div className="flex items-center gap-3">
                 <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-                <button onClick={() => setCurrentUser(null)} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors">دخول الموظفين</button>
+                <button onClick={handleLogout} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors">دخول الموظفين</button>
               </div>
             </header>
 
@@ -832,7 +670,7 @@ export default function App() {
 
         ) : (
           /* ============================================================
-               الواجهة الأساسية للموظفين (مدير / كاشير / سوبر ادمن)
+               الواجهة الأساسية للموظفين
               ============================================================ */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden transition-colors w-full pt-7">
 
@@ -869,7 +707,7 @@ export default function App() {
                     </button>
                   </nav>
                   <div className="p-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
-                    <button onClick={() => { setCurrentUser(null); setPassword(''); setCafeCode(''); }} className="w-full flex justify-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-600 hover:text-white font-bold transition-colors text-sm">
+                    <button onClick={handleLogout} className="w-full flex justify-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-600 hover:text-white font-bold transition-colors text-sm">
                       <LogOut size={18}/> تسجيل خروج
                     </button>
                   </div>
@@ -878,7 +716,6 @@ export default function App() {
             )}
 
             <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
-              {/* الشريط العلوي */}
               <header className="p-3 md:p-4 md:px-8 flex justify-between items-center shadow-sm z-30 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   {currentUser.role === 'admin' && <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19}/></button>}
@@ -896,17 +733,14 @@ export default function App() {
                     {isDarkMode ? <Sun size={17}/> : <Moon size={17}/>}
                   </button>
                   <span className="hidden md:block text-sm font-black text-slate-700 dark:text-slate-300">{currentUser.name}</span>
-                  {(currentUser.role === 'super_admin' || currentUser.role === 'cashier') && (
-                    <button onClick={() => { setCurrentUser(null); setPassword(''); }} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 rounded-lg transition-colors">
-                      <LogOut size={17}/>
-                    </button>
-                  )}
+                  <button onClick={handleLogout} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 rounded-lg transition-colors">
+                    <LogOut size={17}/>
+                  </button>
                 </div>
               </header>
 
               <div className="flex-1 overflow-auto custom-scrollbar relative">
 
-                {/* شاشة استلام العهدة للكاشير */}
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
                   <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
                     <div className="bg-white dark:bg-slate-800 p-6 md:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
@@ -929,9 +763,6 @@ export default function App() {
                   </div>
                 ) :
 
-                /* ==============================
-                   Super Admin Dashboard
-                   ============================== */
                 currentUser.role === 'super_admin' ? (
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -967,35 +798,31 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
-                  /* ==============================
-                     نقطة البيع
-                     ============================== */
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 lg:p-6 gap-4 lg:gap-6 overflow-hidden relative">
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden pb-16 lg:pb-0">
-                      {/* نوع الطلب */}
                       <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
                         <button onClick={() => { setOrderType('takeaway'); setActiveTableId(null); }} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'takeaway' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-white'}`}>تيك أواي</button>
                         <button onClick={() => setOrderType('dine_in')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'dine_in' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-white'}`}>صالة (طاولات)</button>
                       </div>
 
-                      {/* اختيار الطاولة */}
                       {orderType === 'dine_in' && !activeTableId && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                           {tables.map(t => {
-                            const isOcc = activeTableOrders[t.id]?.length > 0;
+                            const tableItems = activeTableOrders[t.id]; const isOcc = Array.isArray(tableItems) && tableItems.length > 0;
                             return (
-                              <button key={t.id} onClick={() => { setActiveTableId(t.id); setCart(activeTableOrders[t.id] || []); }}
+                              <button key={t.id} onClick={() => { setActiveTableId(t.id);
+                              const savedCart = activeTableOrders[t.id];
+                              setCart(Array.isArray(savedCart) ? savedCart : []); }}
                                 className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${isOcc ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 hover:border-indigo-400 text-slate-700 dark:text-slate-300'}`}>
                                 <Armchair className="w-7 h-7"/>
                                 <span className="font-black text-xs line-clamp-1">{t.name}</span>
-                                {isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">مشغولة</span>}
+                                {isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">{tableItems.length} صنف</span>}
                               </button>
                             );
                           })}
                         </div>
                       )}
 
-                      {/* فلاتر الأقسام */}
                       <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
                         <button onClick={() => setSelectedCategoryFilter('all')} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>الكل</button>
                         {categories.map(cat => (
@@ -1003,7 +830,6 @@ export default function App() {
                         ))}
                       </div>
 
-                      {/* شبكة المنتجات */}
                       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1 custom-scrollbar">
                         {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => (
                           <button key={p.id} onClick={() => {
@@ -1024,7 +850,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* شريط السلة السفلي - موبايل */}
                     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 p-3 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 flex justify-between items-center">
                       <div className="font-black text-base text-indigo-600 dark:text-indigo-400">
                         {(() => {
@@ -1040,7 +865,6 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* السلة */}
                     <div className={`w-full lg:w-[350px] xl:w-[420px] bg-white dark:bg-slate-800 rounded-t-3xl lg:rounded-3xl shadow-2xl lg:shadow-md border border-slate-200 dark:border-slate-700 flex flex-col h-[85vh] lg:h-full fixed lg:relative bottom-0 left-0 right-0 z-40 transition-transform duration-300 ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
                       <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 rounded-t-3xl flex justify-between items-center shrink-0">
                         <h3 className="font-black text-lg flex items-center gap-2 text-slate-800 dark:text-white"><ShoppingCart className="text-indigo-500 w-5 h-5"/> السلة {activeTableId && <span className="text-indigo-600 text-xs bg-indigo-100 px-2 py-1 rounded-lg">{tables.find(t => t.id === activeTableId)?.name}</span>}</h3>
@@ -1071,50 +895,22 @@ export default function App() {
                         }
                       </div>
                       <div className="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700 lg:rounded-b-3xl shrink-0">
-
-                        {/* ===== قسم الخصم — للمدير فقط ===== */}
                         {currentUser.role === 'admin' && cart.length > 0 && (
                           <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800">
                             <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5">
                               <Receipt size={13}/> تطبيق خصم (صلاحية المدير)
                             </p>
                             <div className="flex gap-2">
-                              {/* نوع الخصم */}
                               <div className="flex bg-white dark:bg-slate-800 rounded-xl border border-amber-200 dark:border-amber-800 p-0.5 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setDiscountType('percent')}
-                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'percent' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}
-                                >%</button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDiscountType('fixed')}
-                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'fixed' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}
-                                >ج</button>
+                                <button type="button" onClick={() => setDiscountType('percent')} className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'percent' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}>%</button>
+                                <button type="button" onClick={() => setDiscountType('fixed')} className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'fixed' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}>ج</button>
                               </div>
-                              {/* قيمة الخصم */}
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={discountValue}
-                                onChange={e => setDiscountValue(e.target.value)}
-                                placeholder={discountType === 'percent' ? 'نسبة % (مثال: 10)' : 'مبلغ ثابت (ج)'}
-                                className="flex-1 p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 outline-none focus:border-amber-500 placeholder:text-amber-300 dark:placeholder:text-amber-700 text-center"
-                              />
-                              {/* زر مسح الخصم */}
-                              {discountValue && (
-                                <button
-                                  type="button"
-                                  onClick={() => setDiscountValue('')}
-                                  className="p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-500 hover:bg-amber-100 transition-colors"
-                                ><X size={14}/></button>
-                              )}
+                              <input type="number" min="0" step="any" value={discountValue} onChange={e => setDiscountValue(e.target.value)} placeholder={discountType === 'percent' ? 'نسبة % (مثال: 10)' : 'مبلغ ثابت (ج)'} className="flex-1 p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 outline-none focus:border-amber-500 placeholder:text-amber-300 dark:placeholder:text-amber-700 text-center"/>
+                              {discountValue && <button type="button" onClick={() => setDiscountValue('')} className="p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-500 hover:bg-amber-100 transition-colors"><X size={14}/></button>}
                             </div>
                           </div>
                         )}
 
-                        {/* ===== ملخص الأسعار ===== */}
                         {(() => {
                           const subtotal = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
                           const dv = parseFloat(discountValue) || 0;
@@ -1126,32 +922,32 @@ export default function App() {
                           const total = afterDiscount + tax;
                           return (
                             <div className="space-y-1.5 mb-4">
-                              <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400">
-                                <span>المجموع الفرعي:</span>
-                                <span>{subtotal.toFixed(2)} ج</span>
-                              </div>
-                              {discountAmt > 0 && (
-                                <div className="flex justify-between text-sm font-black text-emerald-600 dark:text-emerald-400">
-                                  <span>الخصم {discountType === 'percent' ? `(${dv}%)` : '(ثابت)'}:</span>
-                                  <span>- {discountAmt.toFixed(2)} ج</span>
-                                </div>
-                              )}
-                              {isTaxEnabled && (
-                                <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400">
-                                  <span>ضريبة (14%):</span>
-                                  <span>{tax.toFixed(2)} ج</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between items-center font-black text-2xl pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
-                                <span>الإجمالي:</span>
-                                <span className="text-indigo-600 dark:text-indigo-400">{total.toFixed(2)} ج</span>
-                              </div>
+                              <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400"><span>المجموع الفرعي:</span><span>{subtotal.toFixed(2)} ج</span></div>
+                              {discountAmt > 0 && <div className="flex justify-between text-sm font-black text-emerald-600 dark:text-emerald-400"><span>الخصم {discountType === 'percent' ? `(${dv}%)` : '(ثابت)'}:</span><span>- {discountAmt.toFixed(2)} ج</span></div>}
+                              {isTaxEnabled && <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400"><span>ضريبة (14%):</span><span>{tax.toFixed(2)} ج</span></div>}
+                              <div className="flex justify-between items-center font-black text-2xl pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white"><span>الإجمالي:</span><span className="text-indigo-600 dark:text-indigo-400">{total.toFixed(2)} ج</span></div>
                             </div>
                           );
                         })()}
                         {orderType === 'dine_in' && activeTableId ? (
                           <div className="flex gap-3">
-                            <button onClick={() => { const u = { ...activeTableOrders, [activeTableId]: cart }; setActiveTableOrders(u); syncToCloud({ activeTableOrders: u }); setCart([]); setActiveTableId(null); setOrderType('takeaway'); setIsMobileCartOpen(false); }} disabled={cart.length === 0} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm"><Save size={17}/> حفظ (تعليق)</button>
+                            <button onClick={async () => {
+                              if (isHoldingTable || cart.length === 0) return;
+                              setIsHoldingTable(true);
+                              try {
+                                const cartSnapshot = [...cart];
+                                const tableIdSnapshot = activeTableId;
+                                if (!tableIdSnapshot || cartSnapshot.length === 0) return;
+                                const updatedTableOrders = { ...activeTableOrders, [tableIdSnapshot]: cartSnapshot };
+                                setActiveTableOrders(updatedTableOrders);
+                                await syncToCloud({ activeTableOrders: updatedTableOrders });
+                                setCart([]); setActiveTableId(null); setOrderType('takeaway'); setIsMobileCartOpen(false);
+                              } finally {
+                                setIsHoldingTable(false);
+                              }
+                            }} disabled={cart.length === 0 || isHoldingTable} className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm ${isHoldingTable ? 'bg-amber-400 cursor-wait' : 'bg-amber-500 hover:bg-amber-600'} text-white`}>
+                              {isHoldingTable ? <><RefreshCw size={15} className="animate-spin"/> جاري الحفظ...</> : <><Save size={17}/> حفظ (تعليق)</>}
+                            </button>
                             <button onClick={processOrder} disabled={cart.length === 0} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm"><Banknote size={17}/> دفع وتقفيل</button>
                           </div>
                         ) : (
@@ -1323,10 +1119,9 @@ export default function App() {
                   {formData.isNew && <div><label className="block text-sm font-black mb-2 dark:text-white">كود الكافيه (معرف فريد)</label><input required name="id" placeholder="مثال: c2" value={formData.id || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>}
                   <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-black mb-2 dark:text-white">باسورد المدير</label><input required name="adminPassword" value={formData.adminPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
-                    <div><label className="block text-xs font-black mb-2 dark:text-white">باسورد الكاشير</label><input required name="cashierPassword" value={formData.cashierPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
-                  </div>
+                  
+                  {/* أزلنا حقول الباسوردات من هنا لأنها هتتعمل كـ إيميلات حقيقية بعدين */}
+                  
                   <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2">حفظ بيانات الكافيه</button>
                 </form>
               </CustomModal>

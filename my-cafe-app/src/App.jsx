@@ -31,6 +31,9 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// ==========================================
+// إعداد Firebase الأساسي والنسخة الخفية
+// ==========================================
 let app = null, auth = null, db = null;
 let secondaryApp = null, secondaryAuth = null;
 
@@ -415,13 +418,20 @@ export default function App() {
   const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
   const confirmDelete = () => {
-    let updates = {};
-    if (deleteConfig.type === 'material') { const u = rawMaterials.filter(rm => rm.id !== deleteConfig.id); setRawMaterials(u); updates.rawMaterials = u; }
-    if (deleteConfig.type === 'product')  { const u = products.filter(p => p.id !== deleteConfig.id);       setProducts(u);      updates.products = u; }
-    if (deleteConfig.type === 'employee') { const u = employees.filter(e => e.id !== deleteConfig.id);      setEmployees(u);     updates.employees = u; }
-    if (deleteConfig.type === 'table')    { const u = tables.filter(t => t.id !== deleteConfig.id);         setTables(u);        updates.tables = u; }
-    if (deleteConfig.type === 'expense')  { const u = expenses.filter(ex => ex.id !== deleteConfig.id);     setExpenses(u);      updates.expenses = u; }
-    syncToCloud(updates); closeModal();
+    if (deleteConfig.type === 'tenant') {
+      const u = tenants.filter(t => t.id !== deleteConfig.id);
+      setTenants(u);
+      syncPlatformToCloud({ tenants: u });
+    } else {
+      let updates = {};
+      if (deleteConfig.type === 'material') { const u = rawMaterials.filter(rm => rm.id !== deleteConfig.id); setRawMaterials(u); updates.rawMaterials = u; }
+      if (deleteConfig.type === 'product')  { const u = products.filter(p => p.id !== deleteConfig.id);       setProducts(u);      updates.products = u; }
+      if (deleteConfig.type === 'employee') { const u = employees.filter(e => e.id !== deleteConfig.id);      setEmployees(u);     updates.employees = u; }
+      if (deleteConfig.type === 'table')    { const u = tables.filter(t => t.id !== deleteConfig.id);         setTables(u);        updates.tables = u; }
+      if (deleteConfig.type === 'expense')  { const u = expenses.filter(ex => ex.id !== deleteConfig.id);     setExpenses(u);      updates.expenses = u; }
+      syncToCloud(updates); 
+    }
+    closeModal();
   };
 
   const genericSave = (collectionName, stateArray, setterFunc, extraFormat = {}) => {
@@ -492,29 +502,29 @@ export default function App() {
         </div>
 
         {!currentUser ? (
-          <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-4 pt-10">
+          <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-4 pt-10 transition-colors">
             <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border-t-8 border-indigo-600">
               <div className="flex justify-between items-start mb-8">
-                <div className="flex items-center gap-4"><div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-2xl text-indigo-600"><Coffee size={36}/></div><div><h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName}</h1><p className="text-slate-500 font-bold text-sm">بوابة الدخول</p></div></div>
-                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500">{isDarkMode ? <Sun size={20}/> : <Moon size={20}/>}</button>
+                <div className="flex items-center gap-4"><div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-2xl text-indigo-600"><Coffee size={36}/></div><div><h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName || '0%'}</h1><p className="text-slate-500 dark:text-slate-400 font-bold text-sm">بوابة الدخول</p></div></div>
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 dark:text-slate-400">{isDarkMode ? <Sun size={20}/> : <Moon size={20}/>}</button>
               </div>
-              {loginError && <div className="mb-5 p-4 bg-rose-50 text-rose-600 text-sm font-bold rounded-xl flex items-center gap-2"><ShieldAlert size={18}/> {loginError}</div>}
+              {loginError && <div className="mb-5 p-4 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 text-sm font-bold rounded-xl flex items-center gap-2"><ShieldAlert size={18}/> {loginError}</div>}
               <form onSubmit={handleLogin} className="space-y-4">
-                <input required type="email" placeholder="البريد الإلكتروني" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-left" dir="ltr"/>
-                <input required type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold tracking-widest text-left" dir="ltr"/>
+                <input required type="email" placeholder="البريد الإلكتروني" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                <input required type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white tracking-widest text-left" dir="ltr"/>
                 <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl shadow-lg flex justify-center gap-2">{isLoggingIn ? <Loader2 size={20} className="animate-spin"/> : 'تسجيل الدخول'}</button>
               </form>
             </div>
           </div>
         ) : (
-          <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden pt-7">
+          <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden pt-7 transition-colors">
             {currentUser.role === 'admin' && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}/>}
                 <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform duration-300 w-64 bg-white dark:bg-slate-900 flex flex-col pt-7 border-l border-slate-200 dark:border-slate-800`}>
                   <div className="p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 flex justify-between items-center">
-                    <div><h2 className="text-lg font-black flex items-center gap-2"><Coffee className="text-indigo-500"/> {globalSettings.appName}</h2><p className="text-indigo-600 text-xs mt-1 font-bold">{currentUser.cafeName}</p></div>
-                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18}/></button>
+                    <div><h2 className="text-lg font-black flex items-center gap-2 dark:text-white"><Coffee className="text-indigo-500"/> {globalSettings.appName || '0%'}</h2><p className="text-indigo-600 dark:text-indigo-400 text-xs mt-1 font-bold">{currentUser.cafeName}</p></div>
+                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-lg"><X size={18}/></button>
                   </div>
                   <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto custom-scrollbar">
                     {[
@@ -532,7 +542,7 @@ export default function App() {
                         {item.icon} {item.label}
                       </button>
                     ))}
-                    <button onClick={() => { setCurrentRoute('pos'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold mt-4 border-2 border-indigo-100 dark:border-slate-700 text-sm ${currentRoute === 'pos' ? 'bg-indigo-600 border-indigo-600 text-white' : 'text-indigo-600 dark:text-slate-300'}`}><ShoppingCart size={19}/> نقطة البيع</button>
+                    <button onClick={() => { setCurrentRoute('pos'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold mt-4 border-2 border-indigo-100 dark:border-slate-700 text-sm ${currentRoute === 'pos' ? 'bg-indigo-600 border-indigo-600 text-white' : 'text-indigo-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800'}`}><ShoppingCart size={19}/> نقطة البيع</button>
                   </nav>
                 </div>
               </>
@@ -541,14 +551,14 @@ export default function App() {
             <main className="flex-1 flex flex-col h-full overflow-hidden relative">
               <header className="p-3 md:p-4 flex justify-between items-center shadow-sm bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  {currentUser.role === 'admin' && <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700"><Menu size={19}/></button>}
-                  <h1 className="font-black text-sm md:text-xl truncate">{currentUser.role === 'super_admin' ? globalSettings.appName : currentUser.role === 'cashier' ? `كاشير — ${currentUser.cafeName}` : currentUser.cafeName}</h1>
+                  {currentUser.role === 'admin' && <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"><Menu size={19}/></button>}
+                  <h1 className="font-black text-sm md:text-xl truncate dark:text-white">{currentUser.role === 'super_admin' ? (globalSettings.appName || '0%') : currentUser.role === 'cashier' ? `كاشير — ${currentUser.cafeName}` : currentUser.cafeName}</h1>
                 </div>
                 <div className="flex items-center gap-2 md:gap-4">
-                  {currentUser.role === 'cashier' && activeShift && <button onClick={() => setActiveModal('closeShift')} className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Power size={14}/><span className="hidden md:inline">إنهاء الوردية</span></button>}
-                  <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700">{isDarkMode ? <Sun size={17}/> : <Moon size={17}/>}</button>
-                  <span className="hidden md:block text-sm font-black">{currentUser.name}</span>
-                  <button onClick={handleLogout} className="p-2 bg-rose-50 text-rose-500 rounded-lg"><LogOut size={17}/></button>
+                  {currentUser.role === 'cashier' && activeShift && <button onClick={() => setActiveModal('closeShift')} className="bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Power size={14}/><span className="hidden md:inline">إنهاء الوردية</span></button>}
+                  <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={17}/> : <Moon size={17}/>}</button>
+                  <span className="hidden md:block text-sm font-black dark:text-white">{currentUser.name}</span>
+                  <button onClick={handleLogout} className="p-2 bg-rose-50 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400 rounded-lg"><LogOut size={17}/></button>
                 </div>
               </header>
 
@@ -556,14 +566,14 @@ export default function App() {
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
                   <div className="absolute inset-0 z-30 flex items-center justify-center p-4">
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
-                      <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-5"><Play className="w-10 h-10"/></div>
-                      <h2 className="text-2xl font-black mb-2">أهلاً بك</h2><p className="text-slate-500 mb-7 font-bold text-sm">لتبدأ البيع، يجب استلام العهدة.</p>
+                      <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-5"><Play className="w-10 h-10"/></div>
+                      <h2 className="text-2xl font-black mb-2 dark:text-white">أهلاً بك</h2><p className="text-slate-500 dark:text-slate-400 mb-7 font-bold text-sm">لتبدأ البيع، يجب استلام العهدة.</p>
                       <form onSubmit={(e) => {
                         e.preventDefault();
                         const newShift = { id: 'sh_'+Date.now(), cashierName: currentUser.name, startTime: new Date().toLocaleString('ar-EG'), timestamp: Date.now(), startingCash: parseFloat(e.target.startingCash.value)||0, status: 'open' };
                         const updated = [...shifts, newShift]; setShifts(updated); syncToCloud({ shifts: updated });
                       }}>
-                        <input required name="startingCash" type="number" min="0" step="any" placeholder="العهدة في الدرج (ج)" className="w-full p-4 mb-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 rounded-2xl text-center font-black text-2xl outline-none"/>
+                        <input required name="startingCash" type="number" min="0" step="any" placeholder="العهدة في الدرج (ج)" className="w-full p-4 mb-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-center font-black text-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white"/>
                         <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black shadow-lg text-lg flex items-center justify-center gap-2"><Play size={20}/> بدء الوردية</button>
                       </form>
                     </div>
@@ -571,35 +581,72 @@ export default function App() {
                 ) :
 
                 currentUser.role === 'super_admin' ? (
-                  <div className="p-4 md:p-8 max-w-6xl mx-auto"><div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">إدارة المنصة (SaaS)</h2></div><div className="flex gap-2"><button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button><button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button></div></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><table className="w-full text-right"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">التحكم</th></tr></thead><tbody>{tenants.map(cafe => (<tr key={cafe.id} className="border-b border-slate-100 text-sm"><td className="p-5 font-black text-indigo-600">{cafe.id}</td><td className="p-5 font-bold">{cafe.name}</td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td><td className="p-5 text-center flex justify-center gap-2"><button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 mr-2">تبديل</button><button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button></td></tr>))}</tbody></table></div></div>
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-8">
+                      <div className="flex items-center gap-3"><Building2 className="text-indigo-600 dark:text-indigo-400 w-8 h-8"/><h2 className="text-3xl font-black dark:text-white">إدارة المنصة (SaaS)</h2></div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button>
+                        <button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <table className="w-full text-right">
+                        <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-sm font-bold">
+                          <tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">التحكم</th></tr>
+                        </thead>
+                        <tbody>
+                          {tenants.map(cafe => (
+                            <tr key={cafe.id} className="border-b border-slate-100 dark:border-slate-700 text-sm">
+                              <td className="p-5 font-black text-indigo-600 dark:text-indigo-400">{cafe.id}</td>
+                              <td className="p-5 font-bold dark:text-white">{cafe.name}</td>
+                              <td className="p-5 text-center">
+                                <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span>
+                              </td>
+                              <td className="p-5 text-center flex justify-center gap-2">
+                                <button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 dark:bg-slate-700 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-300 mr-2">تبديل</button>
+                                <button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button>
+                                <button onClick={() => { setDeleteConfig({ type: 'tenant', id: cafe.id }); setActiveModal('delete'); }} className="bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">حذف</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 gap-4 relative">
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-                      <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
-                        <button onClick={() => { setOrderType('takeaway'); setActiveTableId(null); }} className={`px-6 py-2 rounded-xl font-bold text-sm ${orderType === 'takeaway' ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}>تيك أواي</button>
-                        <button onClick={() => setOrderType('dine_in')} className={`px-6 py-2 rounded-xl font-bold text-sm ${orderType === 'dine_in' ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}>صالة</button>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-fit border border-slate-200 dark:border-slate-700">
+                        <button onClick={() => { setOrderType('takeaway'); setActiveTableId(null); }} className={`px-6 py-2 rounded-xl font-bold text-sm ${orderType === 'takeaway' ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-400'}`}>تيك أواي</button>
+                        <button onClick={() => setOrderType('dine_in')} className={`px-6 py-2 rounded-xl font-bold text-sm ${orderType === 'dine_in' ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-400'}`}>صالة</button>
                       </div>
                       {orderType === 'dine_in' && !activeTableId && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                          {tables.map(t => { const tableItems = activeTableOrders[t.id]; const isOcc = Array.isArray(tableItems) && tableItems.length > 0; return (<button key={t.id} onClick={() => { setActiveTableId(t.id); const savedCart = activeTableOrders[t.id]; setCart(Array.isArray(savedCart) ? savedCart : []); }} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 ${isOcc ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'}`}><Armchair className="w-7 h-7"/><span className="font-black text-xs">{t.name}</span>{isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">{tableItems.length} صنف</span>}</button>); })}
+                          {tables.map(t => { const tableItems = activeTableOrders[t.id]; const isOcc = Array.isArray(tableItems) && tableItems.length > 0; return (<button key={t.id} onClick={() => { setActiveTableId(t.id); const savedCart = activeTableOrders[t.id]; setCart(Array.isArray(savedCart) ? savedCart : []); }} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 ${isOcc ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 text-amber-700' : 'border-slate-200 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'}`}><Armchair className="w-7 h-7"/><span className="font-black text-xs">{t.name}</span>{isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">{tableItems.length} صنف</span>}</button>); })}
                         </div>
                       )}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1">
+                      <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                        <button onClick={() => setSelectedCategoryFilter('all')} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>الكل</button>
+                        {categories.map(cat => (
+                          <button key={cat.id} onClick={() => setSelectedCategoryFilter(cat.id)} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>{cat.name}</button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1 custom-scrollbar">
                         {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => (
-                          <button key={p.id} onClick={() => { if (orderType === 'dine_in' && !activeTableId) return; const existing = cart.find(i => i.id === p.id); if (existing) setCart(cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i)); else setCart([...cart, { ...p, quantity: 1 }]); }} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center gap-2"><h3 className="font-bold text-xs line-clamp-2">{p.name}</h3><p className="text-indigo-600 font-black text-xs">{p.price} ج</p></button>
+                          <button key={p.id} onClick={() => { if (orderType === 'dine_in' && !activeTableId) return; const existing = cart.find(i => i.id === p.id); if (existing) setCart(cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i)); else setCart([...cart, { ...p, quantity: 1 }]); }} className="bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col items-center gap-2"><h3 className="font-bold text-xs line-clamp-2 dark:text-white">{p.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-black text-xs">{p.price} ج</p></button>
                         ))}
                       </div>
                     </div>
-                    <div className="w-full lg:w-[350px] bg-white rounded-3xl shadow-lg flex flex-col h-full">
-                      <div className="flex-1 overflow-auto p-4 space-y-2">
+                    <div className="w-full lg:w-[350px] bg-white dark:bg-slate-800 rounded-3xl shadow-lg border border-slate-200 dark:border-slate-700 flex flex-col h-full">
+                      <div className="flex-1 overflow-auto p-4 space-y-2 custom-scrollbar">
                         {cart.map(item => (
-                          <div key={item.id} className="bg-slate-50 p-2.5 rounded-2xl border flex justify-between items-center">
-                            <div><p className="font-bold text-xs">{item.name}</p><p className="text-[10px] font-black text-indigo-600">{item.price * item.quantity} ج</p></div>
-                            <div className="flex items-center gap-1 bg-white p-1.5 rounded-xl border"><button onClick={() => setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="text-emerald-500 p-1"><Plus size={13}/></button><span className="font-black text-xs">{item.quantity}</span><button onClick={() => { if (item.quantity > 1) setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i)); else setCart(cart.filter(i => i.id !== item.id)); }} className="text-rose-500 p-1"><Minus size={13}/></button></div>
+                          <div key={item.id} className="bg-slate-50 dark:bg-slate-700 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-600 flex justify-between items-center">
+                            <div><p className="font-bold text-xs dark:text-white">{item.name}</p><p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{item.price * item.quantity} ج</p></div>
+                            <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-600"><button onClick={() => setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="text-emerald-500 p-1"><Plus size={13}/></button><span className="font-black text-xs dark:text-white">{item.quantity}</span><button onClick={() => { if (item.quantity > 1) setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i)); else setCart(cart.filter(i => i.id !== item.id)); }} className="text-rose-500 p-1"><Minus size={13}/></button></div>
                           </div>
                         ))}
                       </div>
-                      <div className="p-5 border-t">
+                      <div className="p-5 border-t border-slate-200 dark:border-slate-700">
                         {orderType === 'dine_in' && activeTableId ? (
                           <div className="flex gap-3">
                             <button onClick={async () => {
@@ -628,24 +675,24 @@ export default function App() {
                     </div>
                   </div>
                 ) : currentRoute === 'dashboard' ? (
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"><h2 className="text-3xl font-black">الملخص العام</h2></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">المبيعات (الصافية)</p><p className="text-4xl font-black text-emerald-600">{financialMetrics.totalRevenue.toFixed(2)} ج</p></div><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">مصروفات ورواتب</p><p className="text-4xl font-black text-rose-600">{financialMetrics.totalExpenses.toFixed(2)} ج</p></div><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">تكلفة الخامات</p><p className="text-4xl font-black text-amber-500">{financialMetrics.totalCogs.toFixed(2)} ج</p></div><div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white"><p className="text-indigo-200 text-sm font-bold mb-2">الربح الصافي</p><p className="text-4xl font-black">{financialMetrics.netProfit.toFixed(2)} ج</p></div></div></div>
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"><h2 className="text-3xl font-black dark:text-white">الملخص العام</h2></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"><div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">المبيعات (الصافية)</p><p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">{financialMetrics.totalRevenue.toFixed(2)} ج</p></div><div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">مصروفات ورواتب</p><p className="text-4xl font-black text-rose-600 dark:text-rose-400">{financialMetrics.totalExpenses.toFixed(2)} ج</p></div><div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">تكلفة الخامات</p><p className="text-4xl font-black text-amber-500 dark:text-amber-400">{financialMetrics.totalCogs.toFixed(2)} ج</p></div><div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white"><p className="text-indigo-200 text-sm font-bold mb-2">الربح الصافي</p><p className="text-4xl font-black">{financialMetrics.netProfit.toFixed(2)} ج</p></div></div></div>
                 ) : currentRoute === 'invoices' && currentUser.role === 'admin' ? (
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
-                    <div className="flex items-center gap-3 mb-8"><FileText className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">سجل الفواتير والمرتجعات</h2></div>
+                    <div className="flex items-center gap-3 mb-8"><FileText className="text-indigo-600 dark:text-indigo-400 w-8 h-8"/><h2 className="text-3xl font-black dark:text-white">سجل الفواتير والمرتجعات</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-right min-w-[700px]">
-                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">رقم الفاتورة</th><th className="p-5">التاريخ</th><th className="p-5">الكاشير</th><th className="p-5">الإجمالي</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">إجراء</th></tr></thead>
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-sm font-bold"><tr><th className="p-5">رقم الفاتورة</th><th className="p-5">التاريخ</th><th className="p-5">الكاشير</th><th className="p-5">الإجمالي</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">إجراء</th></tr></thead>
                           <tbody>{orders.slice().reverse().map(o => (
-                            <tr key={o.id} className={`border-b border-slate-100 text-sm ${o.status === 'voided' ? 'opacity-60 bg-rose-50/50' : ''}`}>
-                              <td className="p-5 font-black text-slate-600">#{o.id.toString().slice(-6)}</td>
-                              <td className="p-5 font-bold text-slate-500">{o.date}</td>
-                              <td className="p-5 font-bold">{o.cashierName || 'غير معروف'}</td>
-                              <td className="p-5 font-black text-indigo-600">{o.total.toFixed(2)} ج</td>
-                              <td className="p-5 text-center"><span className={`px-3 py-1 rounded-lg text-xs font-black ${o.status === 'voided' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{o.status === 'voided' ? 'مرتجع' : 'مكتمل'}</span></td>
+                            <tr key={o.id} className={`border-b border-slate-100 dark:border-slate-700 text-sm ${o.status === 'voided' ? 'opacity-60 bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
+                              <td className="p-5 font-black text-slate-600 dark:text-slate-400">#{o.id.toString().slice(-6)}</td>
+                              <td className="p-5 font-bold text-slate-500 dark:text-slate-400">{o.date}</td>
+                              <td className="p-5 font-bold dark:text-white">{o.cashierName || 'غير معروف'}</td>
+                              <td className="p-5 font-black text-indigo-600 dark:text-indigo-400">{o.total.toFixed(2)} ج</td>
+                              <td className="p-5 text-center"><span className={`px-3 py-1 rounded-lg text-xs font-black ${o.status === 'voided' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>{o.status === 'voided' ? 'مرتجع' : 'مكتمل'}</span></td>
                               <td className="p-5 text-center flex justify-center gap-2">
-                                <button onClick={() => setLastOrder(o)} className="bg-slate-100 text-slate-700 p-2 rounded-xl hover:bg-slate-200"><Printer size={15}/></button>
-                                {o.status !== 'voided' && <button onClick={() => { setFormData({ order: o }); setActiveModal('voidOrder'); }} className="bg-rose-100 text-rose-600 p-2 rounded-xl hover:bg-rose-200"><Undo size={15}/></button>}
+                                <button onClick={() => setLastOrder(o)} className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600"><Printer size={15}/></button>
+                                {o.status !== 'voided' && <button onClick={() => { setFormData({ order: o }); setActiveModal('voidOrder'); }} className="bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 p-2 rounded-xl hover:bg-rose-200 dark:hover:bg-rose-900/50"><Undo size={15}/></button>}
                               </td>
                             </tr>
                           ))}
@@ -658,26 +705,26 @@ export default function App() {
                 ) : currentRoute === 'hr' ? (
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
-                      <div className="flex items-center gap-3"><Users className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">شؤون الموظفين (HR)</h2></div>
+                      <div className="flex items-center gap-3"><Users className="text-indigo-600 dark:text-indigo-400 w-8 h-8"/><h2 className="text-3xl font-black dark:text-white">شؤون الموظفين (HR)</h2></div>
                       <div className="flex gap-2">
-                        <button onClick={() => { setFormData({ type: 'advance' }); setActiveModal('hrTransaction'); }} className="bg-amber-100 text-amber-700 px-4 py-2.5 rounded-xl font-bold flex gap-2"><Banknote size={17}/> تسجيل سلفة/خصم</button>
+                        <button onClick={() => { setFormData({ type: 'advance' }); setActiveModal('hrTransaction'); }} className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-4 py-2.5 rounded-xl font-bold flex gap-2"><Banknote size={17}/> تسجيل سلفة/خصم</button>
                         <button onClick={() => openModal('employee')} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> موظف جديد</button>
                       </div>
                     </div>
-                    <div className="bg-white rounded-3xl shadow-sm border overflow-hidden">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full text-right min-w-[700px]">
-                          <thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">الاسم</th><th className="p-5">الراتب الأساسي</th><th className="p-5">إجمالي السلف</th><th className="p-5">إجمالي الخصومات</th><th className="p-5 text-center">صافي الراتب المستحق</th></tr></thead>
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 text-sm"><tr><th className="p-5">الاسم</th><th className="p-5">الراتب الأساسي</th><th className="p-5">إجمالي السلف</th><th className="p-5">إجمالي الخصومات</th><th className="p-5 text-center">صافي الراتب المستحق</th></tr></thead>
                           <tbody>{employees.map(emp => {
                             const empAdvances = hrTransactions.filter(t => t.empId === emp.id && t.type === 'advance').reduce((s, t) => s + t.amount, 0);
                             const empDeductions = hrTransactions.filter(t => t.empId === emp.id && t.type === 'deduction').reduce((s, t) => s + t.amount, 0);
                             return (
-                            <tr key={emp.id} className="border-b text-sm">
-                              <td className="p-5 font-black text-base">{emp.name}</td>
-                              <td className="p-5 font-bold">{emp.salary} ج</td>
-                              <td className="p-5 font-bold text-amber-500">{empAdvances} ج</td>
-                              <td className="p-5 font-bold text-rose-500">{empDeductions} ج</td>
-                              <td className="p-5 text-center font-black text-emerald-600 text-base">{emp.salary - empAdvances - empDeductions} ج</td>
+                            <tr key={emp.id} className="border-b border-slate-100 dark:border-slate-700 text-sm">
+                              <td className="p-5 font-black text-base dark:text-white">{emp.name}</td>
+                              <td className="p-5 font-bold dark:text-slate-300">{emp.salary} ج</td>
+                              <td className="p-5 font-bold text-amber-500 dark:text-amber-400">{empAdvances} ج</td>
+                              <td className="p-5 font-bold text-rose-500 dark:text-rose-400">{empDeductions} ج</td>
+                              <td className="p-5 text-center font-black text-emerald-600 dark:text-emerald-400 text-base">{emp.salary - empAdvances - empDeductions} ج</td>
                             </tr>
                           )})}</tbody>
                         </table>
@@ -687,23 +734,23 @@ export default function App() {
                 ) : currentRoute === 'stock_take' && currentUser.role === 'admin' ? (
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
-                      <div className="flex items-center gap-3"><History className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">جرد وتسوية المخزن</h2></div>
+                      <div className="flex items-center gap-3"><History className="text-indigo-600 dark:text-indigo-400 w-8 h-8"/><h2 className="text-3xl font-black dark:text-white">جرد وتسوية المخزن</h2></div>
                       <button onClick={processStockTake} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg"><Save size={17}/> اعتماد وتسوية الجرد</button>
                     </div>
-                    <div className="bg-white rounded-3xl shadow-sm border overflow-hidden">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full text-right min-w-[600px]">
-                          <thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">المادة الخام</th><th className="p-5">الوحدة</th><th className="p-5">الرصيد الدفتري (السيستم)</th><th className="p-5">الرصيد الفعلي (بالمخزن)</th><th className="p-5">العجز/الزيادة</th></tr></thead>
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 text-sm"><tr><th className="p-5">المادة الخام</th><th className="p-5">الوحدة</th><th className="p-5">الرصيد الدفتري (السيستم)</th><th className="p-5">الرصيد الفعلي (بالمخزن)</th><th className="p-5">العجز/الزيادة</th></tr></thead>
                           <tbody>{rawMaterials.map(rm => {
                             const actual = stockInputs[rm.id];
                             const diff = actual !== undefined ? actual - rm.currentStock : 0;
                             return (
-                            <tr key={rm.id} className="border-b text-sm">
-                              <td className="p-5 font-black">{rm.name}</td>
-                              <td className="p-5 text-slate-500">{rm.unit}</td>
-                              <td className="p-5 font-bold text-indigo-600">{rm.currentStock}</td>
+                            <tr key={rm.id} className="border-b border-slate-100 dark:border-slate-700 text-sm">
+                              <td className="p-5 font-black dark:text-white">{rm.name}</td>
+                              <td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td>
+                              <td className="p-5 font-bold text-indigo-600 dark:text-indigo-400">{rm.currentStock}</td>
                               <td className="p-5">
-                                <input type="number" min="0" step="any" placeholder="أدخل الفعلي" value={stockInputs[rm.id] !== undefined ? stockInputs[rm.id] : ''} onChange={(e) => setStockInputs({...stockInputs, [rm.id]: e.target.value !== '' ? parseFloat(e.target.value) : undefined})} className="w-28 p-2 border-2 rounded-xl text-center font-bold outline-none focus:border-indigo-500"/>
+                                <input type="number" min="0" step="any" placeholder="أدخل الفعلي" value={stockInputs[rm.id] !== undefined ? stockInputs[rm.id] : ''} onChange={(e) => setStockInputs({...stockInputs, [rm.id]: e.target.value !== '' ? parseFloat(e.target.value) : undefined})} className="w-28 p-2 bg-transparent border-2 border-slate-200 dark:border-slate-700 rounded-xl text-center font-bold outline-none focus:border-indigo-500 dark:text-white"/>
                               </td>
                               <td className="p-5 font-black">
                                 {actual === undefined ? '-' : <span className={diff < 0 ? 'text-rose-500' : diff > 0 ? 'text-emerald-500' : 'text-slate-400'}>{diff > 0 ? '+' : ''}{diff}</span>}
@@ -714,9 +761,30 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="p-4 md:p-8 text-center text-slate-400 font-bold mt-20"><p>اختر قسماً من القائمة.</p></div>
-                )}
+                ) : currentRoute === 'inventory' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 dark:text-indigo-400 w-8 h-8"/> المواد الخام</h2>
+                      <button onClick={() => openModal('material')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> مادة جديدة</button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[500px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 text-sm"><tr><th className="p-5">المادة</th><th className="p-5">الوحدة</th><th className="p-5">الكمية</th><th className="p-5">التكلفة</th><th className="p-5 text-center">حذف</th></tr></thead>
+                          <tbody>{rawMaterials.map(rm => <tr key={rm.id} className="border-b border-slate-100 dark:border-slate-700 text-sm"><td className="p-5 font-black text-slate-800 dark:text-white">{rm.name}</td><td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td><td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock < 100 ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>{rm.currentStock}</span></td><td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'material', id: rm.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td></tr>)}</tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : currentRoute === 'products' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4"><h2 className="text-3xl font-black dark:text-white flex items-center gap-3"><Coffee className="text-indigo-500 dark:text-indigo-400 w-8 h-8"/> المنتجات والوصفات</h2><button onClick={() => openModal('product')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> منتج جديد</button></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">{products.map(p => (<div key={p.id} className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><div className="flex justify-between mb-4"><h3 className="font-black text-base dark:text-white">{p.name}</h3><span className="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 rounded-xl font-black text-sm">{p.price} ج</span></div><div className="space-y-1.5 mb-4">{p.recipe?.map((r, i) => <div key={i} className="text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700 p-2.5 rounded-xl flex justify-between border border-slate-100 dark:border-slate-600"><span>{rawMaterials.find(rm => rm.id === r.materialId)?.name}</span><span className="text-indigo-600 dark:text-indigo-400">{r.amount} {rawMaterials.find(rm => rm.id === r.materialId)?.unit}</span></div>)}</div><button onClick={() => { setDeleteConfig({ type: 'product', id: p.id }); setActiveModal('delete'); }} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-2.5 rounded-xl"><Trash2 size={15}/></button></div>))}</div></div>
+                ) : currentRoute === 'shifts' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 dark:text-indigo-400 w-8 h-8"/><h2 className="text-3xl font-black dark:text-white">سجل الورديات</h2></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[900px]"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 text-sm"><tr><th className="p-5">الموظف</th><th className="p-5">البداية</th><th className="p-5">النهاية</th><th className="p-5 text-center">العهدة</th><th className="p-5 text-center">المبيعات</th><th className="p-5 text-center">الدرج الفعلي</th><th className="p-5 text-center">العجز / الزيادة</th><th className="p-5 text-center">الحالة</th></tr></thead><tbody>{[...(shifts || [])].reverse().map(shift => { const shiftSales = orders.filter(o => o.shiftId === shift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0); const expectedCash = (shift.startingCash || 0) + shiftSales; const variance = shift.status === 'closed' ? ((shift.actualCash || 0) - expectedCash) : 0; return (<tr key={shift.id} className="border-b border-slate-100 dark:border-slate-700 text-sm"><td className="p-5 font-bold flex items-center gap-2 dark:text-white"><Users size={15} className="text-indigo-400"/>{shift.cashierName}</td><td className="p-5 text-xs text-slate-600 dark:text-slate-400">{shift.startTime}</td><td className="p-5 text-xs text-slate-600 dark:text-slate-400">{shift.endTime || '---'}</td><td className="p-5 text-center font-bold dark:text-slate-300">{shift.startingCash} ج</td><td className="p-5 text-center font-black text-indigo-600 dark:text-indigo-400">{shiftSales.toFixed(2)} ج</td><td className="p-5 text-center font-bold dark:text-slate-300">{shift.actualCash !== undefined ? `${shift.actualCash} ج` : '---'}</td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${variance < 0 ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' : variance > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>{variance < 0 ? `عجز ${Math.abs(variance).toFixed(2)}` : variance > 0 ? `زيادة ${variance.toFixed(2)}` : 'مضبوط'}</span></td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${shift.status === 'open' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>{shift.status === 'open' ? 'مفتوح' : 'مغلق'}</span></td></tr>);})}</tbody></table></div></div></div>
+                ) : currentRoute === 'tables' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black dark:text-white flex items-center gap-3"><Utensils className="text-indigo-500 dark:text-indigo-400 w-8 h-8"/> إدارة الصالة</h2><button onClick={() => openModal('table')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> طاولة جديدة</button></div><div className="grid grid-cols-2 md:grid-cols-5 gap-5">{tables.map(t => (<div key={t.id} className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 flex flex-col items-center shadow-sm relative group"><Armchair className="text-slate-300 dark:text-slate-600 mb-3 w-14 h-14"/><h3 className="font-black text-base dark:text-white">{t.name}</h3><p className="text-sm font-bold text-indigo-500 dark:text-indigo-400">{t.capacity} كراسي</p><button onClick={() => { setDeleteConfig({ type: 'table', id: t.id }); setActiveModal('delete'); }} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-1.5 rounded-xl"><Trash2 size={13}/></button></div>))}</div></div>
+                ) : currentRoute === 'expenses' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black dark:text-white flex items-center gap-3"><Receipt className="text-indigo-500 dark:text-indigo-400 w-8 h-8"/> المصروفات</h2><button onClick={() => openModal('expense')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> تسجيل مصروف</button></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[500px]"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 dark:text-slate-400 text-sm"><tr><th className="p-5">التاريخ</th><th className="p-5">البيان</th><th className="p-5">المبلغ</th><th className="p-5 text-center">حذف</th></tr></thead><tbody>{expenses.map(ex => <tr key={ex.id} className="border-b border-slate-100 dark:border-slate-700 text-sm"><td className="p-5 font-bold text-slate-500 dark:text-slate-400">{ex.date}</td><td className="p-5 font-black dark:text-white">{ex.description}</td><td className="p-5 font-black text-rose-500 dark:text-rose-400">{ex.amount} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'expense', id: ex.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 bg-rose-50 dark:bg-rose-900/30 rounded-xl"><Trash2 size={15}/></button></td></tr>)}</tbody></table></div></div></div>
+                ) : null}
               </div>
             </main>
 
@@ -738,7 +806,6 @@ export default function App() {
                   <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   
-                  {/* شاشة إنشاء حساب المدير - هتظهر دايما في الإضافة */}
                   {formData.isNew && (
                     <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 space-y-3">
                       <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">📧 بيانات دخول مدير الكافيه (مهم جداً):</p>
@@ -757,20 +824,19 @@ export default function App() {
             {activeModal === 'employee' && (
               <CustomModal title="ملف موظف جديد" onClose={closeModal}>
                 <form onSubmit={saveEmployee} className="space-y-4">
-                  <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-500"/>
-                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-indigo-500"/>
+                  <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold outline-none focus:border-indigo-500 dark:text-white"/>
+                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 outline-none focus:border-indigo-500"/>
                   
-                  {/* زرار الكاشير */}
-                  <label className="flex items-center gap-3 text-sm font-black text-slate-700 cursor-pointer p-4 bg-slate-100 border-2 border-slate-200 rounded-2xl hover:bg-slate-200 transition-colors mt-4">
+                  <label className="flex items-center gap-3 text-sm font-black text-slate-700 dark:text-slate-300 cursor-pointer p-4 bg-slate-100 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors mt-4">
                     <input type="checkbox" name="createAuth" checked={formData.createAuth || false} onChange={handleFormChange} className="w-6 h-6 accent-indigo-600 rounded"/>
                     تفعيل حساب دخول (كاشير) لهذا الموظف
                   </label>
 
                   {formData.createAuth && (
-                    <div className="bg-indigo-50 p-4 rounded-xl border-2 border-indigo-200 space-y-3 mt-2">
-                      <p className="text-sm font-black text-indigo-800">📧 بيانات دخول الكاشير:</p>
-                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للكاشير" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left outline-none focus:border-indigo-500" dir="ltr"/>
-                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left outline-none focus:border-indigo-500" dir="ltr"/>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 space-y-3 mt-2">
+                      <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">📧 بيانات دخول الكاشير:</p>
+                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للكاشير" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-left outline-none focus:border-indigo-500 dark:text-white" dir="ltr"/>
+                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-left outline-none focus:border-indigo-500 dark:text-white" dir="ltr"/>
                     </div>
                   )}
 
@@ -784,16 +850,16 @@ export default function App() {
             {activeModal === 'hrTransaction' && (
               <CustomModal title="تسجيل سلفة أو خصم" onClose={closeModal}>
                 <form onSubmit={processHrTransaction} className="space-y-4">
-                  <select required name="empId" value={formData.empId || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border rounded-2xl font-bold outline-none">
+                  <select required name="empId" value={formData.empId || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold outline-none dark:text-white">
                     <option value="" disabled>اختر الموظف</option>
                     {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                   </select>
                   <div className="flex gap-2">
-                    <label className={`flex-1 p-3 border-2 rounded-xl font-bold text-center cursor-pointer ${formData.type === 'advance' ? 'border-amber-500 bg-amber-50 text-amber-700' : ''}`}><input type="radio" name="type" value="advance" className="hidden" onChange={handleFormChange} required/>سلفة نقدية</label>
-                    <label className={`flex-1 p-3 border-2 rounded-xl font-bold text-center cursor-pointer ${formData.type === 'deduction' ? 'border-rose-500 bg-rose-50 text-rose-700' : ''}`}><input type="radio" name="type" value="deduction" className="hidden" onChange={handleFormChange} required/>خصم / جزاء</label>
+                    <label className={`flex-1 p-3 border-2 rounded-xl font-bold text-center cursor-pointer ${formData.type === 'advance' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' : 'border-slate-200 dark:border-slate-700 dark:text-slate-400'}`}><input type="radio" name="type" value="advance" className="hidden" onChange={handleFormChange} required/>سلفة نقدية</label>
+                    <label className={`flex-1 p-3 border-2 rounded-xl font-bold text-center cursor-pointer ${formData.type === 'deduction' ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400' : 'border-slate-200 dark:border-slate-700 dark:text-slate-400'}`}><input type="radio" name="type" value="deduction" className="hidden" onChange={handleFormChange} required/>خصم / جزاء</label>
                   </div>
-                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج)" value={formData.amount || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-xl text-center outline-none"/>
-                  <input required type="text" name="reason" placeholder="السبب / البيان" value={formData.reason || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border rounded-2xl font-bold outline-none"/>
+                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج)" value={formData.amount || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-xl text-center outline-none dark:text-white"/>
+                  <input required type="text" name="reason" placeholder="السبب / البيان" value={formData.reason || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold outline-none dark:text-white"/>
                   <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg">حفظ المعاملة</button>
                 </form>
               </CustomModal>
@@ -803,11 +869,11 @@ export default function App() {
               <CustomModal title="تأكيد مرتجع الفاتورة" onClose={closeModal}>
                 <div className="text-center p-4">
                   <Undo className="w-16 h-16 text-rose-500 mx-auto mb-4"/>
-                  <p className="font-bold text-lg mb-2">هل أنت متأكد من إلغاء الفاتورة رقم #{formData.order.id.toString().slice(-6)}؟</p>
-                  <p className="text-sm text-slate-500 mb-6">سيتم خصم {formData.order.total} ج من المبيعات وإرجاع الخامات للمخزن.</p>
+                  <p className="font-bold text-lg mb-2 dark:text-white">هل أنت متأكد من إلغاء الفاتورة رقم #{formData.order.id.toString().slice(-6)}؟</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">سيتم خصم {formData.order.total} ج من المبيعات وإرجاع الخامات للمخزن.</p>
                   <div className="flex gap-3">
                     <button onClick={processVoidOrder} className="flex-1 bg-rose-600 text-white py-3 rounded-xl font-black">نعم، تأكيد المرتجع</button>
-                    <button onClick={closeModal} className="flex-1 bg-slate-200 text-slate-800 py-3 rounded-xl font-black">إلغاء</button>
+                    <button onClick={closeModal} className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white py-3 rounded-xl font-black">إلغاء</button>
                   </div>
                 </div>
               </CustomModal>
@@ -816,20 +882,20 @@ export default function App() {
             {activeModal === 'product' && (
               <CustomModal title="إضافة صنف للقائمة" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, setProducts, { name: e.target.name.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: e.target.image.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
-                  <input required name="name" value={formData.name || ''} onChange={handleFormChange} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm"/>
+                  <input required name="name" value={formData.name || ''} onChange={handleFormChange} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none font-bold text-sm dark:text-white"/>
                   <div className="grid grid-cols-2 gap-4">
-                    <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm"/>
-                    <input required type="number" step="any" name="price" value={formData.price || ''} onChange={handleFormChange} placeholder="السعر (ج)" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black text-indigo-600 text-sm"/>
+                    <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none font-bold text-sm dark:text-white"/>
+                    <input required type="number" step="any" name="price" value={formData.price || ''} onChange={handleFormChange} placeholder="السعر (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none font-black text-indigo-600 dark:text-indigo-400 text-sm"/>
                   </div>
-                  <div className="relative"><ImageIcon className="absolute left-4 top-4 text-slate-400 w-4 h-4"/><input name="image" value={formData.image || ''} onChange={handleFormChange} placeholder="رابط صورة (اختياري)" className="w-full p-4 pl-12 bg-slate-50 border rounded-2xl outline-none font-bold text-left text-xs" dir="ltr"/></div>
-                  <div className="border-t pt-4">
-                    <div className="flex justify-between items-center mb-4"><label className="text-sm font-black">مقادير الوصفة</label><button type="button" onClick={() => setFormData({ ...formData, recipe: [...(formData.recipe || []), { materialId: '', amount: '' }] })} className="text-xs bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg font-bold">إضافة مكون</button></div>
+                  <div className="relative"><ImageIcon className="absolute left-4 top-4 text-slate-400 w-4 h-4"/><input name="image" value={formData.image || ''} onChange={handleFormChange} placeholder="رابط صورة (اختياري)" className="w-full p-4 pl-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none font-bold text-left text-xs dark:text-white" dir="ltr"/></div>
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                    <div className="flex justify-between items-center mb-4"><label className="text-sm font-black dark:text-white">مقادير الوصفة</label><button type="button" onClick={() => setFormData({ ...formData, recipe: [...(formData.recipe || []), { materialId: '', amount: '' }] })} className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-3 py-2 rounded-lg font-bold">إضافة مكون</button></div>
                     <div className="space-y-2 max-h-40 overflow-auto custom-scrollbar">
                       {(formData.recipe || []).map((item, idx) => (
                         <div key={idx} className="flex gap-2">
-                          <select required value={item.materialId} onChange={e => { const r = [...formData.recipe]; r[idx].materialId = e.target.value; setFormData({ ...formData, recipe: r }); }} className="flex-1 p-2.5 border rounded-xl text-xs font-bold bg-slate-50 outline-none"><option value="" disabled>اختر مادة</option>{rawMaterials.map(rm => <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>)}</select>
-                          <input required type="number" step="any" value={item.amount} onChange={e => { const r = [...formData.recipe]; r[idx].amount = parseFloat(e.target.value); setFormData({ ...formData, recipe: r }); }} placeholder="الكمية" className="w-24 p-2.5 border rounded-xl text-xs text-center font-bold bg-slate-50 outline-none"/>
-                          <button type="button" onClick={() => { const r = [...formData.recipe]; r.splice(idx, 1); setFormData({ ...formData, recipe: r }); }} className="text-rose-500 bg-rose-50 p-2.5 rounded-xl"><Trash2 size={15}/></button>
+                          <select required value={item.materialId} onChange={e => { const r = [...formData.recipe]; r[idx].materialId = e.target.value; setFormData({ ...formData, recipe: r }); }} className="flex-1 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-900 outline-none dark:text-white"><option value="" disabled>اختر مادة</option>{rawMaterials.map(rm => <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>)}</select>
+                          <input required type="number" step="any" value={item.amount} onChange={e => { const r = [...formData.recipe]; r[idx].amount = parseFloat(e.target.value); setFormData({ ...formData, recipe: r }); }} placeholder="الكمية" className="w-24 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-center font-bold bg-slate-50 dark:bg-slate-900 outline-none dark:text-white"/>
+                          <button type="button" onClick={() => { const r = [...formData.recipe]; r.splice(idx, 1); setFormData({ ...formData, recipe: r }); }} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-2.5 rounded-xl"><Trash2 size={15}/></button>
                         </div>
                       ))}
                     </div>
@@ -842,11 +908,11 @@ export default function App() {
             {activeModal === 'material' && (
               <CustomModal title="مادة خام للمخزن" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('rawMaterials', rawMaterials, setRawMaterials, { name: e.target.name.value, unit: e.target.unit.value, currentStock: parseFloat(e.target.currentStock.value), costPerUnit: parseFloat(e.target.costPerUnit.value) }); }} className="space-y-4">
-                  <input required name="name" placeholder="اسم المادة" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none"/>
-                  <select required name="unit" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none"><option value="جرام">جرام</option><option value="مللي">مللي</option><option value="قطعة">قطعة</option><option value="كيلو">كيلو</option></select>
+                  <input required name="name" placeholder="اسم المادة" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none dark:text-white"/>
+                  <select required name="unit" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none dark:text-white"><option value="جرام">جرام</option><option value="مللي">مللي</option><option value="قطعة">قطعة</option><option value="كيلو">كيلو</option></select>
                   <div className="grid grid-cols-2 gap-4">
-                    <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-sm outline-none"/>
-                    <input required type="number" step="any" name="costPerUnit" placeholder="تكلفة الوحدة (ج)" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-rose-500 text-sm outline-none"/>
+                    <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm outline-none dark:text-white"/>
+                    <input required type="number" step="any" name="costPerUnit" placeholder="تكلفة الوحدة (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-sm outline-none"/>
                   </div>
                   <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">حفظ المادة</button>
                 </form>
@@ -856,8 +922,8 @@ export default function App() {
             {activeModal === 'table' && (
               <CustomModal title="تسجيل طاولة بالصالة" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('tables', tables, setTables, { name: e.target.name.value, capacity: parseInt(e.target.capacity.value) }); }} className="space-y-4">
-                  <input required name="name" placeholder="مثال: طاولة 5" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold text-sm outline-none"/>
-                  <input required type="number" name="capacity" placeholder="عدد الكراسي" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-sm outline-none"/>
+                  <input required name="name" placeholder="مثال: طاولة 5" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none dark:text-white"/>
+                  <input required type="number" name="capacity" placeholder="عدد الكراسي" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-sm outline-none dark:text-white"/>
                   <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">حفظ الطاولة</button>
                 </form>
               </CustomModal>
@@ -866,8 +932,8 @@ export default function App() {
             {activeModal === 'expense' && (
               <CustomModal title="سند مصروف نثري" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('expenses', expenses, setExpenses, { description: e.target.description.value, amount: parseFloat(e.target.amount.value), date: new Date().toISOString().split('T')[0] }); }} className="space-y-4">
-                  <input required name="description" placeholder="البيان" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold text-sm outline-none"/>
-                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج.م)" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-rose-500 text-sm outline-none"/>
+                  <input required name="description" placeholder="البيان" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-sm outline-none dark:text-white"/>
+                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج.م)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-sm outline-none"/>
                   <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">سجل المصروف</button>
                 </form>
               </CustomModal>
@@ -883,13 +949,13 @@ export default function App() {
                   setShifts(updatedShifts); syncToCloud({ shifts: updatedShifts });
                   closeModal(); handleLogout();
                 }}>
-                  <div className="bg-indigo-50 p-5 rounded-2xl mb-6 border border-indigo-100">
-                    <p className="text-sm font-bold text-indigo-800 flex justify-between mb-3"><span>العهدة عند الاستلام:</span><span>{activeShift.startingCash} ج</span></p>
-                    <p className="text-sm font-black text-indigo-800 flex justify-between border-t border-indigo-200 pt-3"><span>مبيعات الشيفت:</span><span>{orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0).toFixed(2)} ج</span></p>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/30 p-5 rounded-2xl mb-6 border border-indigo-100 dark:border-indigo-800">
+                    <p className="text-sm font-bold text-indigo-800 dark:text-indigo-300 flex justify-between mb-3"><span>العهدة عند الاستلام:</span><span>{activeShift.startingCash} ج</span></p>
+                    <p className="text-sm font-black text-indigo-800 dark:text-indigo-300 flex justify-between border-t border-indigo-200 dark:border-indigo-700 pt-3"><span>مبيعات الشيفت:</span><span>{orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0).toFixed(2)} ج</span></p>
                   </div>
                   <div className="text-right mb-7">
-                    <label className="block text-sm font-black mb-3">كم المبلغ الفعلي في الدرج الآن؟</label>
-                    <input required name="actualCash" type="number" min="0" step="any" placeholder="المبلغ الصافي" className="w-full p-4 bg-slate-50 border-2 rounded-2xl text-center font-black text-2xl outline-none"/>
+                    <label className="block text-sm font-black mb-3 dark:text-white">كم المبلغ الفعلي في الدرج الآن؟</label>
+                    <input required name="actualCash" type="number" min="0" step="any" placeholder="المبلغ الصافي" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-center font-black text-2xl outline-none focus:border-indigo-500 dark:text-white"/>
                   </div>
                   <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-2xl font-black shadow-lg text-lg">تأكيد التقفيل والخروج</button>
                 </form>
@@ -898,12 +964,12 @@ export default function App() {
 
             {activeModal === 'delete' && (
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                <div className="bg-white p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-rose-100">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-rose-100 dark:border-rose-900">
                   <AlertCircle className="w-20 h-20 text-rose-500 mx-auto mb-4"/>
-                  <h3 className="text-2xl font-black mb-2">هل أنت متأكد؟</h3>
+                  <h3 className="text-2xl font-black mb-2 dark:text-white">هل أنت متأكد؟</h3>
                   <div className="flex gap-3 mt-8">
                     <button onClick={confirmDelete} className="flex-1 bg-rose-600 text-white py-3.5 rounded-xl font-black">نعم، احذف</button>
-                    <button onClick={closeModal} className="flex-1 bg-slate-100 text-slate-800 py-3.5 rounded-xl font-black">إلغاء</button>
+                    <button onClick={closeModal} className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white py-3.5 rounded-xl font-black">إلغاء</button>
                   </div>
                 </div>
               </div>

@@ -9,7 +9,7 @@ import {
   Moon, Sun, Edit, X, Printer, Menu, 
   Building2, Utensils, Armchair, Save, AlertCircle, 
   Loader2, WifiOff, RefreshCw, Wifi, ClipboardList, Play, Power, ShieldAlert, Image as ImageIcon, Settings, Store,
-  Undo, History // أيقونات جديدة للمرتجعات والسجل
+  Undo, History
 } from 'lucide-react';
 
 class ErrorBoundary extends React.Component {
@@ -79,6 +79,19 @@ const CustomModal = ({ title, children, onClose }) => (
   </div>
 );
 
+const SafeNumberInput = ({ value, onSave, colorClass }) => {
+  const [val, setVal] = useState(value === 0 || !value ? '' : value);
+  useEffect(() => { setVal(value === 0 || !value ? '' : value); }, [value]);
+  return (
+    <input 
+      type="number" min="0" step="any" placeholder="0" value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={() => onSave(val === '' ? 0 : parseFloat(val))}
+      className={`w-20 md:w-28 p-2 md:p-2.5 text-center border-2 rounded-xl bg-transparent dark:border-slate-600 focus:outline-none font-bold transition-colors ${colorClass}`}
+    />
+  );
+};
+
 export default function App() {
   const [fbUser, setFbUser]               = useState(null);
   const [isDataLoaded, setIsDataLoaded]   = useState(true);
@@ -102,7 +115,7 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // البيانات
-  const [globalSettings, setGlobalSettings]         = useState({ appName: 'كوفي سحابة' });
+  const [globalSettings, setGlobalSettings]         = useState({ appName: '0%' });
   const [tenants, setTenants]                       = useState([]);
   const [rawMaterials, setRawMaterials]             = useState([]);
   const [products, setProducts]                     = useState(defaultProducts);
@@ -112,7 +125,6 @@ export default function App() {
   const [shifts, setShifts]                         = useState([]);
   const [orders, setOrders]                         = useState([]);
   const [activeTableOrders, setActiveTableOrders]   = useState({});
-  // مصفوفات جديدة للـ HR والجرد
   const [hrTransactions, setHrTransactions]         = useState([]);
   const [inventoryRecords, setInventoryRecords]     = useState([]);
   
@@ -131,9 +143,7 @@ export default function App() {
   const [lastOrder, setLastOrder]                     = useState(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
   
-  // الجرد
   const [stockInputs, setStockInputs]                 = useState({});
-
   const [discountType, setDiscountType]   = useState('percent');
   const [discountValue, setDiscountValue] = useState('');
   const [isHoldingTable, setIsHoldingTable] = useState(false);
@@ -188,7 +198,6 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // جلب بيانات السوبر أدمن
   useEffect(() => {
     if (!fbUser || !db || currentUser?.role !== 'super_admin') return;
     const platformRef = doc(db, 'coffee_erp_platform', 'config');
@@ -202,7 +211,6 @@ export default function App() {
     return () => unsubscribe();
   }, [fbUser, currentUser?.role]);
 
-  // جلب بيانات الكافيه
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.cafeId) return;
 
@@ -268,9 +276,6 @@ export default function App() {
     return shifts.find(s => s.status === 'open' && s.cashierName === currentUser.name);
   }, [shifts, currentUser]);
 
-  // ==========================================
-  // POS & Orders
-  // ==========================================
   const processOrder = () => {
     if (cart.length === 0) return;
     if (orderType === 'dine_in' && !activeTableId) return alert('يرجى تحديد الطاولة أولاً!');
@@ -302,7 +307,7 @@ export default function App() {
       id: Date.now(), items: cart, subtotal: cartSubtotal,
       discountAmount, discountType: discountAmount > 0 ? discountType : null, discountValue: discountAmount > 0 ? parseFloat(discountValue) : null,
       tax: cartTax, total: totalOrderAmount,
-      status: 'completed', // 'completed' | 'voided'
+      status: 'completed', 
       date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
       note: orderType === 'takeaway' ? 'تيك أواي' : `صالة - ${tables.find(t => t.id === activeTableId)?.name}`,
       shiftId: activeShift ? activeShift.id : null, cashierName: currentUser.name
@@ -317,13 +322,11 @@ export default function App() {
     setCart([]); setLastOrder(newOrder); setOrderType('takeaway'); setActiveTableId(null); setIsMobileCartOpen(false); setDiscountValue('');
   };
 
-  // نظام المرتجعات (Void Order) - للأدمن فقط
   const processVoidOrder = () => {
     const orderToVoid = formData.order;
     if (!orderToVoid || orderToVoid.status === 'voided') return;
 
     const newRawMaterials = [...rawMaterials];
-    // إرجاع الخامات للمخزن
     orderToVoid.items.forEach(cartItem => {
       const product = products.find(p => p.id === cartItem.id);
       if (product?.recipe) {
@@ -346,9 +349,6 @@ export default function App() {
     closeModal();
   };
 
-  // ==========================================
-  // HR & Inventory Actions
-  // ==========================================
   const processHrTransaction = (e) => {
     e.preventDefault();
     const newTx = {
@@ -368,7 +368,7 @@ export default function App() {
       const actual = stockInputs[rm.id];
       if (actual !== undefined && actual !== rm.currentStock) {
         const variance = actual - rm.currentStock;
-        const loss = variance < 0 ? Math.abs(variance * rm.costPerUnit) : 0; // الخسارة تحسب فقط في حالة العجز
+        const loss = variance < 0 ? Math.abs(variance * rm.costPerUnit) : 0; 
         newRecord.items.push({ materialId: rm.id, materialName: rm.name, expected: rm.currentStock, actual, variance, loss });
         newRecord.totalLoss += loss;
         return { ...rm, currentStock: actual };
@@ -386,9 +386,6 @@ export default function App() {
     alert(`تمت تسوية المخزون بنجاح. قيمة العجز الكلي: ${newRecord.totalLoss.toFixed(2)} ج`);
   };
 
-  // ==========================================
-  // Metrics (Dashboard & Shifts)
-  // ==========================================
   const financialMetrics = useMemo(() => {
     const filterByPeriod = (timestamp) => {
       if (!timestamp || reportPeriod === 'all') return true;
@@ -400,7 +397,6 @@ export default function App() {
       return true;
     };
     
-    // استبعاد الفواتير الملغاة من الأرباح
     const fOrders   = (orders   || []).filter(o => filterByPeriod(o.timestamp) && o.status !== 'voided');
     const fExpenses = (expenses || []).filter(e => filterByPeriod(new Date(e.date).getTime()));
     
@@ -441,6 +437,12 @@ export default function App() {
       ? stateArray.map(item => item.id === formData.id ? { ...item, ...formData, ...extraFormat } : item)
       : [...stateArray, { ...formData, ...extraFormat, id: `${collectionName}_${Date.now()}` }];
     setterFunc(updated); syncToCloud({ [collectionName]: updated }); closeModal();
+  };
+
+  const saveGlobalSettings = (e) => {
+    e.preventDefault();
+    const updated = { ...globalSettings, appName: formData.appName };
+    setGlobalSettings(updated); syncPlatformToCloud({ globalSettings: updated }); closeModal();
   };
 
   const saveTenant = async (e) => {
@@ -524,13 +526,13 @@ export default function App() {
                   <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto custom-scrollbar">
                     {[
                       { id: 'dashboard', icon: <LayoutDashboard size={19}/>, label: 'لوحة القيادة' },
-                      { id: 'invoices',  icon: <FileText size={19}/>,        label: 'سجل الفواتير' }, // جديد
+                      { id: 'invoices',  icon: <FileText size={19}/>,        label: 'سجل الفواتير' }, 
                       { id: 'shifts',    icon: <ClipboardList size={19}/>,   label: 'سجل الورديات' },
                       { id: 'inventory', icon: <Package size={19}/>,         label: 'المواد الخام' },
-                      { id: 'stock_take',icon: <History size={19}/>,         label: 'جرد وتسوية المخزن' }, // جديد
+                      { id: 'stock_take',icon: <History size={19}/>,         label: 'جرد وتسوية المخزن' }, 
                       { id: 'products',  icon: <Coffee size={19}/>,          label: 'المنتجات' },
                       { id: 'tables',    icon: <Utensils size={19}/>,        label: 'إدارة الصالة' },
-                      { id: 'hr',        icon: <Users size={19}/>,           label: 'شؤون الموظفين (HR)' }, // تم تحديثه
+                      { id: 'hr',        icon: <Users size={19}/>,           label: 'شؤون الموظفين' }, 
                       { id: 'expenses',  icon: <Receipt size={19}/>,         label: 'المصروفات' },
                     ].map(item => (
                       <button key={item.id} onClick={() => { setCurrentRoute(item.id); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${currentRoute === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
@@ -576,10 +578,8 @@ export default function App() {
                 ) :
 
                 currentUser.role === 'super_admin' ? (
-                  // ... (Super Admin Dashboard remains the same) ...
-                  <div className="p-4 md:p-8 max-w-6xl mx-auto"><div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">إدارة المنصة (SaaS)</h2></div><div className="flex gap-2"><button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button></div></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><table className="w-full text-right"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">التحكم</th></tr></thead><tbody>{tenants.map(cafe => (<tr key={cafe.id} className="border-b border-slate-100 text-sm"><td className="p-5 font-black text-indigo-600">{cafe.id}</td><td className="p-5 font-bold">{cafe.name}</td><td className="p-5 text-center"><button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 mr-2">تبديل</button></td></tr>))}</tbody></table></div></div>
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto"><div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">إدارة المنصة (SaaS)</h2></div><div className="flex gap-2"><button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button><button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button></div></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><table className="w-full text-right"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">التحكم</th></tr></thead><tbody>{tenants.map(cafe => (<tr key={cafe.id} className="border-b border-slate-100 text-sm"><td className="p-5 font-black text-indigo-600">{cafe.id}</td><td className="p-5 font-bold">{cafe.name}</td><td className="p-5 text-center"><button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 mr-2">تبديل</button><button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button></td></tr>))}</tbody></table></div></div>
                 ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
-                  // ... (POS Screen remains mostly the same, removed for brevity in snippet, assumes standard rendering) ...
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 gap-4 relative">
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                       <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
@@ -588,11 +588,11 @@ export default function App() {
                       </div>
                       {orderType === 'dine_in' && !activeTableId && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                          {tables.map(t => { const isOcc = activeTableOrders[t.id]?.length > 0; return (<button key={t.id} onClick={() => { setActiveTableId(t.id); setCart(activeTableOrders[t.id] || []); }} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 ${isOcc ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'}`}><Armchair className="w-7 h-7"/><span className="font-black text-xs">{t.name}</span></button>); })}
+                          {tables.map(t => { const tableItems = activeTableOrders[t.id]; const isOcc = Array.isArray(tableItems) && tableItems.length > 0; return (<button key={t.id} onClick={() => { setActiveTableId(t.id); const savedCart = activeTableOrders[t.id]; setCart(Array.isArray(savedCart) ? savedCart : []); }} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 ${isOcc ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'}`}><Armchair className="w-7 h-7"/><span className="font-black text-xs">{t.name}</span>{isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">{tableItems.length} صنف</span>}</button>); })}
                         </div>
                       )}
                       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1">
-                        {products.map(p => (
+                        {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => (
                           <button key={p.id} onClick={() => { if (orderType === 'dine_in' && !activeTableId) return; const existing = cart.find(i => i.id === p.id); if (existing) setCart(cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i)); else setCart([...cart, { ...p, quantity: 1 }]); }} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center gap-2"><h3 className="font-bold text-xs line-clamp-2">{p.name}</h3><p className="text-indigo-600 font-black text-xs">{p.price} ج</p></button>
                         ))}
                       </div>
@@ -607,15 +607,36 @@ export default function App() {
                         ))}
                       </div>
                       <div className="p-5 border-t">
-                        <button onClick={processOrder} disabled={cart.length === 0} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 disabled:opacity-50"><Banknote className="w-5 h-5"/> دفع</button>
+                        {orderType === 'dine_in' && activeTableId ? (
+                          <div className="flex gap-3">
+                            <button onClick={async () => {
+                              if (isHoldingTable || cart.length === 0) return;
+                              setIsHoldingTable(true);
+                              try {
+                                const cartSnapshot = [...cart];
+                                const tableIdSnapshot = activeTableId;
+                                if (!tableIdSnapshot || cartSnapshot.length === 0) return;
+                                const updatedTableOrders = { ...activeTableOrders, [tableIdSnapshot]: cartSnapshot };
+                                setActiveTableOrders(updatedTableOrders);
+                                await syncToCloud({ activeTableOrders: updatedTableOrders });
+                                setCart([]); setActiveTableId(null); setOrderType('takeaway'); setIsMobileCartOpen(false);
+                              } finally {
+                                setIsHoldingTable(false);
+                              }
+                            }} disabled={cart.length === 0 || isHoldingTable} className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm ${isHoldingTable ? 'bg-amber-400 cursor-wait' : 'bg-amber-500 hover:bg-amber-600'} text-white`}>
+                              {isHoldingTable ? <><RefreshCw size={15} className="animate-spin"/> حفظ...</> : <><Save size={17}/> تعليق</>}
+                            </button>
+                            <button onClick={processOrder} disabled={cart.length === 0} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm"><Banknote size={17}/> دفع وتقفيل</button>
+                          </div>
+                        ) : (
+                          <button onClick={processOrder} disabled={cart.length === 0} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-colors text-lg"><Banknote className="w-5 h-5"/> دفع وإصدار فاتورة</button>
+                        )}
                       </div>
                     </div>
                   </div>
                 ) : currentRoute === 'dashboard' ? (
-                  // ... (Dashboard remains the same) ...
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"><h2 className="text-3xl font-black">الملخص العام</h2></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">المبيعات (الصافية)</p><p className="text-4xl font-black text-emerald-600">{financialMetrics.totalRevenue.toFixed(2)} ج</p></div></div></div>
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"><h2 className="text-3xl font-black">الملخص العام</h2></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">المبيعات (الصافية)</p><p className="text-4xl font-black text-emerald-600">{financialMetrics.totalRevenue.toFixed(2)} ج</p></div><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">مصروفات ورواتب</p><p className="text-4xl font-black text-rose-600">{financialMetrics.totalExpenses.toFixed(2)} ج</p></div><div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-slate-500 text-sm font-bold mb-2">تكلفة الخامات</p><p className="text-4xl font-black text-amber-500">{financialMetrics.totalCogs.toFixed(2)} ج</p></div><div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white"><p className="text-indigo-200 text-sm font-bold mb-2">الربح الصافي</p><p className="text-4xl font-black">{financialMetrics.netProfit.toFixed(2)} ج</p></div></div></div>
                 ) : currentRoute === 'invoices' && currentUser.role === 'admin' ? (
-                  // شاشة سجل الفواتير الجديدة
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-3 mb-8"><FileText className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">سجل الفواتير والمرتجعات</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -642,7 +663,6 @@ export default function App() {
                     </div>
                   </div>
                 ) : currentRoute === 'hr' ? (
-                  // شاشة الموظفين المطورة (HR)
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
                       <div className="flex items-center gap-3"><Users className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">شؤون الموظفين (HR)</h2></div>
@@ -672,7 +692,6 @@ export default function App() {
                     </div>
                   </div>
                 ) : currentRoute === 'stock_take' && currentUser.role === 'admin' ? (
-                  // شاشة الجرد والتسوية الجديدة
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex justify-between items-center mb-8">
                       <div className="flex items-center gap-3"><History className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">جرد وتسوية المخزن</h2></div>
@@ -702,14 +721,65 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ) : (
-                  // Inventory & Shifts (Placeholder to say they work normally)
-                  <div className="p-4 md:p-8 text-center text-slate-400 font-bold mt-20"><p>يرجى اختيار قسم من القائمة الجانبية.</p></div>
-                )}
+                ) : currentRoute === 'inventory' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 w-8 h-8"/> المواد الخام</h2>
+                      <button onClick={() => openModal('material')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> مادة جديدة</button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[500px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm"><tr><th className="p-5">المادة</th><th className="p-5">الوحدة</th><th className="p-5">الكمية</th><th className="p-5">التكلفة</th><th className="p-5 text-center">حذف</th></tr></thead>
+                          <tbody>{rawMaterials.map(rm => <tr key={rm.id} className="border-b border-slate-100 dark:border-slate-700 text-sm"><td className="p-5 font-black text-slate-800 dark:text-white">{rm.name}</td><td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td><td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock < 100 ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock}</span></td><td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'material', id: rm.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td></tr>)}</tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : currentRoute === 'products' ? (
+                  // ... (Products, Tables, Expenses, Shifts remain standard)
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4"><h2 className="text-3xl font-black flex items-center gap-3"><Coffee className="text-indigo-500 w-8 h-8"/> المنتجات والوصفات</h2><button onClick={() => openModal('product')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> منتج جديد</button></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">{products.map(p => (<div key={p.id} className="bg-white p-5 rounded-3xl border shadow-sm"><div className="flex justify-between mb-4"><h3 className="font-black text-base">{p.name}</h3><span className="text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl font-black text-sm">{p.price} ج</span></div><div className="space-y-1.5 mb-4">{p.recipe?.map((r, i) => <div key={i} className="text-xs font-bold text-slate-600 bg-slate-50 p-2.5 rounded-xl flex justify-between border"><span>{rawMaterials.find(rm => rm.id === r.materialId)?.name}</span><span className="text-indigo-600">{r.amount} {rawMaterials.find(rm => rm.id === r.materialId)?.unit}</span></div>)}</div><button onClick={() => { setDeleteConfig({ type: 'product', id: p.id }); setActiveModal('delete'); }} className="text-rose-500 bg-rose-50 p-2.5 rounded-xl"><Trash2 size={15}/></button></div>))}</div></div>
+                ) : currentRoute === 'shifts' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">سجل الورديات</h2></div><div className="bg-white rounded-3xl shadow-sm border overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[900px]"><thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">الموظف</th><th className="p-5">البداية</th><th className="p-5">النهاية</th><th className="p-5 text-center">العهدة</th><th className="p-5 text-center">المبيعات</th><th className="p-5 text-center">الدرج الفعلي</th><th className="p-5 text-center">العجز / الزيادة</th><th className="p-5 text-center">الحالة</th></tr></thead><tbody>{[...(shifts || [])].reverse().map(shift => { const shiftSales = orders.filter(o => o.shiftId === shift.id).reduce((sum, o) => sum + o.total, 0); const expectedCash = (shift.startingCash || 0) + shiftSales; const variance = shift.status === 'closed' ? ((shift.actualCash || 0) - expectedCash) : 0; return (<tr key={shift.id} className="border-b text-sm"><td className="p-5 font-bold flex items-center gap-2"><Users size={15} className="text-indigo-400"/>{shift.cashierName}</td><td className="p-5 text-xs text-slate-600">{shift.startTime}</td><td className="p-5 text-xs text-slate-600">{shift.endTime || '---'}</td><td className="p-5 text-center font-bold">{shift.startingCash} ج</td><td className="p-5 text-center font-black text-indigo-600">{shiftSales.toFixed(2)} ج</td><td className="p-5 text-center font-bold">{shift.actualCash !== undefined ? `${shift.actualCash} ج` : '---'}</td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${variance < 0 ? 'bg-rose-100 text-rose-700' : variance > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{variance < 0 ? `عجز ${Math.abs(variance).toFixed(2)}` : variance > 0 ? `زيادة ${variance.toFixed(2)}` : 'مضبوط'}</span></td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${shift.status === 'open' ? 'bg-amber-100 text-amber-700 animate-pulse' : 'bg-slate-100 text-slate-500'}`}>{shift.status === 'open' ? 'مفتوح' : 'مغلق'}</span></td></tr>);})}</tbody></table></div></div></div>
+                ) : currentRoute === 'tables' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black flex items-center gap-3"><Utensils className="text-indigo-500 w-8 h-8"/> إدارة الصالة</h2><button onClick={() => openModal('table')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> طاولة جديدة</button></div><div className="grid grid-cols-2 md:grid-cols-5 gap-5">{tables.map(t => (<div key={t.id} className="bg-white p-5 rounded-3xl border flex flex-col items-center shadow-sm relative group"><Armchair className="text-slate-300 mb-3 w-14 h-14"/><h3 className="font-black text-base">{t.name}</h3><p className="text-sm font-bold text-indigo-500">{t.capacity} كراسي</p><button onClick={() => { setDeleteConfig({ type: 'table', id: t.id }); setActiveModal('delete'); }} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 p-1.5 rounded-xl"><Trash2 size={13}/></button></div>))}</div></div>
+                ) : currentRoute === 'expenses' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black flex items-center gap-3"><Receipt className="text-indigo-500 w-8 h-8"/> المصروفات</h2><button onClick={() => openModal('expense')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> تسجيل مصروف</button></div><div className="bg-white rounded-3xl shadow-sm border overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[500px]"><thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">التاريخ</th><th className="p-5">البيان</th><th className="p-5">المبلغ</th><th className="p-5 text-center">حذف</th></tr></thead><tbody>{expenses.map(ex => <tr key={ex.id} className="border-b text-sm"><td className="p-5 font-bold text-slate-500">{ex.date}</td><td className="p-5 font-black">{ex.description}</td><td className="p-5 font-black text-rose-500">{ex.amount} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'expense', id: ex.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 bg-rose-50 rounded-xl"><Trash2 size={15}/></button></td></tr>)}</tbody></table></div></div></div>
+                ) : null}
               </div>
             </main>
 
-            {/* ==================== النوافذ المنبثقة الإضافية ==================== */}
+            {/* ==================== النوافذ المنبثقة ==================== */}
+            {activeModal === 'globalSettings' && (
+              <CustomModal title="إعدادات المنصة" onClose={closeModal}>
+                <form onSubmit={saveGlobalSettings} className="space-y-4">
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">اسم المنصة</label><input required name="appName" value={formData.appName || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg">حفظ التغييرات</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'tenant' && (
+              <CustomModal title={formData.id && !formData.isNew ? "تعديل بيانات الكافيه" : "إضافة كافيه جديد"} onClose={closeModal}>
+                <form onSubmit={saveTenant} className="space-y-4">
+                  {formData.isNew && <div><label className="block text-sm font-black mb-2 dark:text-white">كود الكافيه (معرف فريد)</label><input required name="id" placeholder="مثال: c2" value={formData.id || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>}
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                  
+                  {formData.isNew && (
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
+                      <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">بيانات دخول مدير الكافيه:</p>
+                      <input required type="email" name="adminEmail" placeholder="البريد الإلكتروني للمدير" value={formData.adminEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                      <input required type="text" name="adminPassword" placeholder="كلمة المرور" value={formData.adminPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2 flex justify-center gap-2">
+                    {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ بيانات الكافيه'}
+                  </button>
+                </form>
+              </CustomModal>
+            )}
 
             {activeModal === 'hrTransaction' && (
               <CustomModal title="تسجيل سلفة أو خصم" onClose={closeModal}>
@@ -743,6 +813,125 @@ export default function App() {
               </CustomModal>
             )}
 
+            {/* باقي الـ Modals الأساسية (موظف، منتج، مادة خام، طاولة، مصروف، حذف، تقفيل شيفت) */}
+            {activeModal === 'employee' && (
+              <CustomModal title="ملف موظف جديد" onClose={closeModal}>
+                <form onSubmit={saveEmployee} className="space-y-4">
+                  <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-500"/>
+                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-indigo-500"/>
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer p-2">
+                    <input type="checkbox" name="createAuth" checked={formData.createAuth || false} onChange={handleFormChange} className="w-5 h-5 accent-indigo-600 rounded"/>
+                    هل تريد إنشاء حساب دخول (كاشير) لهذا الموظف؟
+                  </label>
+                  {formData.createAuth && (
+                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-3">
+                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للدخول" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left" dir="ltr"/>
+                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left" dir="ltr"/>
+                    </div>
+                  )}
+                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-lg flex justify-center gap-2">
+                     {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ الموظف'}
+                  </button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'product' && (
+              <CustomModal title="إضافة صنف للقائمة" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, setProducts, { name: e.target.name.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: e.target.image.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
+                  <input required name="name" value={formData.name || ''} onChange={handleFormChange} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm"/>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-sm"/>
+                    <input required type="number" step="any" name="price" value={formData.price || ''} onChange={handleFormChange} placeholder="السعر (ج)" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black text-indigo-600 text-sm"/>
+                  </div>
+                  <div className="relative"><ImageIcon className="absolute left-4 top-4 text-slate-400 w-4 h-4"/><input name="image" value={formData.image || ''} onChange={handleFormChange} placeholder="رابط صورة (اختياري)" className="w-full p-4 pl-12 bg-slate-50 border rounded-2xl outline-none font-bold text-left text-xs" dir="ltr"/></div>
+                  <div className="border-t pt-4">
+                    <div className="flex justify-between items-center mb-4"><label className="text-sm font-black">مقادير الوصفة</label><button type="button" onClick={() => setFormData({ ...formData, recipe: [...(formData.recipe || []), { materialId: '', amount: '' }] })} className="text-xs bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg font-bold">إضافة مكون</button></div>
+                    <div className="space-y-2 max-h-40 overflow-auto custom-scrollbar">
+                      {(formData.recipe || []).map((item, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <select required value={item.materialId} onChange={e => { const r = [...formData.recipe]; r[idx].materialId = e.target.value; setFormData({ ...formData, recipe: r }); }} className="flex-1 p-2.5 border rounded-xl text-xs font-bold bg-slate-50 outline-none"><option value="" disabled>اختر مادة</option>{rawMaterials.map(rm => <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>)}</select>
+                          <input required type="number" step="any" value={item.amount} onChange={e => { const r = [...formData.recipe]; r[idx].amount = parseFloat(e.target.value); setFormData({ ...formData, recipe: r }); }} placeholder="الكمية" className="w-24 p-2.5 border rounded-xl text-xs text-center font-bold bg-slate-50 outline-none"/>
+                          <button type="button" onClick={() => { const r = [...formData.recipe]; r.splice(idx, 1); setFormData({ ...formData, recipe: r }); }} className="text-rose-500 bg-rose-50 p-2.5 rounded-xl"><Trash2 size={15}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black mt-2 shadow-lg text-lg">حفظ المنتج</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'material' && (
+              <CustomModal title="مادة خام للمخزن" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('rawMaterials', rawMaterials, setRawMaterials, { name: e.target.name.value, unit: e.target.unit.value, currentStock: parseFloat(e.target.currentStock.value), costPerUnit: parseFloat(e.target.costPerUnit.value) }); }} className="space-y-4">
+                  <input required name="name" placeholder="اسم المادة" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none"/>
+                  <select required name="unit" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none"><option value="جرام">جرام</option><option value="مللي">مللي</option><option value="قطعة">قطعة</option><option value="كيلو">كيلو</option></select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-sm outline-none"/>
+                    <input required type="number" step="any" name="costPerUnit" placeholder="تكلفة الوحدة (ج)" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-rose-500 text-sm outline-none"/>
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">حفظ المادة</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'table' && (
+              <CustomModal title="تسجيل طاولة بالصالة" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('tables', tables, setTables, { name: e.target.name.value, capacity: parseInt(e.target.capacity.value) }); }} className="space-y-4">
+                  <input required name="name" placeholder="مثال: طاولة 5" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold text-sm outline-none"/>
+                  <input required type="number" name="capacity" placeholder="عدد الكراسي" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-sm outline-none"/>
+                  <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">حفظ الطاولة</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'expense' && (
+              <CustomModal title="سند مصروف نثري" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('expenses', expenses, setExpenses, { description: e.target.description.value, amount: parseFloat(e.target.amount.value), date: new Date().toISOString().split('T')[0] }); }} className="space-y-4">
+                  <input required name="description" placeholder="البيان" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold text-sm outline-none"/>
+                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج.م)" className="w-full p-4 bg-slate-50 border rounded-2xl font-black text-rose-500 text-sm outline-none"/>
+                  <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg">سجل المصروف</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'closeShift' && activeShift && (
+              <CustomModal title="تقفيل الوردية" onClose={closeModal}>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const actualCash = parseFloat(e.target.actualCash.value) || 0;
+                  const shiftSales = orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0);
+                  const updatedShifts = shifts.map(s => s.id === activeShift.id ? { ...s, endTime: new Date().toLocaleString('ar-EG'), actualCash, totalSales: shiftSales, status: 'closed' } : s);
+                  setShifts(updatedShifts); syncToCloud({ shifts: updatedShifts });
+                  closeModal(); handleLogout();
+                }}>
+                  <div className="bg-indigo-50 p-5 rounded-2xl mb-6 border border-indigo-100">
+                    <p className="text-sm font-bold text-indigo-800 flex justify-between mb-3"><span>العهدة عند الاستلام:</span><span>{activeShift.startingCash} ج</span></p>
+                    <p className="text-sm font-black text-indigo-800 flex justify-between border-t border-indigo-200 pt-3"><span>مبيعات الشيفت:</span><span>{orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0).toFixed(2)} ج</span></p>
+                  </div>
+                  <div className="text-right mb-7">
+                    <label className="block text-sm font-black mb-3">كم المبلغ الفعلي في الدرج الآن؟</label>
+                    <input required name="actualCash" type="number" min="0" step="any" placeholder="المبلغ الصافي" className="w-full p-4 bg-slate-50 border-2 rounded-2xl text-center font-black text-2xl outline-none"/>
+                  </div>
+                  <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-2xl font-black shadow-lg text-lg">تأكيد التقفيل والخروج</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'delete' && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                <div className="bg-white p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-rose-100">
+                  <AlertCircle className="w-20 h-20 text-rose-500 mx-auto mb-4"/>
+                  <h3 className="text-2xl font-black mb-2">هل أنت متأكد؟</h3>
+                  <div className="flex gap-3 mt-8">
+                    <button onClick={confirmDelete} className="flex-1 bg-rose-600 text-white py-3.5 rounded-xl font-black">نعم، احذف</button>
+                    <button onClick={closeModal} className="flex-1 bg-slate-100 text-slate-800 py-3.5 rounded-xl font-black">إلغاء</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {lastOrder && (
               <CustomModal title={lastOrder.status === 'voided' ? "إيصال مرتجع" : "إيصال الدفع"} onClose={() => setLastOrder(null)}>
                 <div className="print-section p-8 bg-white text-black text-center font-mono border-2 border-dashed border-slate-300 rounded-2xl mx-auto max-w-xs relative overflow-hidden">
@@ -750,15 +939,22 @@ export default function App() {
                   <Coffee className="mx-auto mb-3 text-slate-800 w-10 h-10"/>
                   <h2 className="text-2xl font-black mb-1">{currentUser.cafeName}</h2>
                   <p className="text-xs font-bold mb-4 text-slate-500">إيصال: #{lastOrder.id.toString().slice(-5)}</p>
+                  <p className="text-[11px] font-bold border-y-2 border-dashed border-slate-300 py-2 mb-4">{lastOrder.date}</p>
                   <div className="space-y-2 mb-5 text-right px-2">{lastOrder.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm font-bold"><span>{i.quantity}x {i.name}</span><span>{i.price * i.quantity}</span></div>)}</div>
                   <div className="border-t border-dashed border-slate-300 pt-3 space-y-1.5 mb-3">
-                    <div className="flex justify-between font-black text-2xl border-t-2 border-slate-800 pt-4 mt-2"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-sm font-bold text-slate-600"><span>المجموع:</span><span>{lastOrder.subtotal?.toFixed(2)}</span></div>
+                    {lastOrder.discountAmount > 0 && (
+                      <div className="flex justify-between text-sm font-black text-emerald-600"><span>خصم {lastOrder.discountType === 'percent' ? `${lastOrder.discountValue}%` : 'ثابت'}:</span><span>- {lastOrder.discountAmount?.toFixed(2)}</span></div>
+                    )}
+                    {lastOrder.tax > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>ضريبة (14%):</span><span>{lastOrder.tax?.toFixed(2)}</span></div>}
                   </div>
-                  <p className="text-[10px] mt-8 text-slate-500 font-bold">الكاشير: {lastOrder.cashierName}</p>
+                  <div className="flex justify-between font-black text-2xl border-t-2 border-slate-800 pt-4 mt-2"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)}</span></div>
+                  <p className="text-[10px] mt-8 text-slate-500 font-bold">الكاشير: {lastOrder.cashierName || currentUser.name}</p>
                 </div>
-                <button onClick={() => window.print()} className="w-full mt-5 bg-indigo-600 text-white py-4 rounded-2xl font-black flex justify-center gap-2"><Printer size={18}/> طباعة الإيصال</button>
+                <button onClick={() => window.print()} className="w-full mt-5 bg-indigo-600 text-white py-4 rounded-2xl font-black flex justify-center gap-2 no-print"><Printer size={18}/> طباعة الإيصال</button>
               </CustomModal>
             )}
+
           </div>
         )}
       </div>

@@ -23,9 +23,6 @@ class ErrorBoundary extends React.Component {
           <AlertCircle className="w-16 h-16 text-rose-500 mb-4 animate-bounce" />
           <h1 className="text-2xl font-bold mb-2 text-slate-800">عذراً، حدث خطأ في النظام!</h1>
           <p className="text-slate-600 mb-4">تم التقاط الخطأ لمنع انهيار التطبيق.</p>
-          <pre className="bg-white p-4 rounded-xl shadow border border-rose-100 text-left text-sm overflow-auto max-w-2xl w-full text-rose-600" dir="ltr">
-            {this.state.error ? String(this.state.error.message || this.state.error) : 'Unknown Error'}
-          </pre>
           <button onClick={() => window.location.reload()} className="mt-6 bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold">تحديث الصفحة</button>
         </div>
       );
@@ -34,9 +31,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// ==========================================
-// إعداد Firebase الأساسي والنسخة الخفية
-// ==========================================
 let app = null, auth = null, db = null;
 let secondaryApp = null, secondaryAuth = null;
 
@@ -114,7 +108,6 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // البيانات
   const [globalSettings, setGlobalSettings]         = useState({ appName: '0%' });
   const [tenants, setTenants]                       = useState([]);
   const [rawMaterials, setRawMaterials]             = useState([]);
@@ -135,7 +128,6 @@ export default function App() {
   const [formData, setFormData]         = useState({});
   const [deleteConfig, setDeleteConfig] = useState(null);
 
-  // POS
   const [cart, setCart]                               = useState([]);
   const [orderType, setOrderType]                     = useState('takeaway');
   const [activeTableId, setActiveTableId]             = useState(null);
@@ -475,6 +467,7 @@ export default function App() {
         await signOut(secondaryAuth);
       }
       genericSave('employees', employees, setEmployees, { id: uid, name: formData.name, salary: parseFloat(formData.salary), hasAuth: formData.createAuth || false });
+      setSyncStatus('success');
     } catch (err) { alert("خطأ: " + err.message); setSyncStatus('error'); }
   };
 
@@ -509,7 +502,7 @@ export default function App() {
               <form onSubmit={handleLogin} className="space-y-4">
                 <input required type="email" placeholder="البريد الإلكتروني" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-left" dir="ltr"/>
                 <input required type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold tracking-widest text-left" dir="ltr"/>
-                <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg flex justify-center gap-2">{isLoggingIn ? <Loader2 size={20} className="animate-spin"/> : 'تسجيل الدخول'}</button>
+                <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl shadow-lg flex justify-center gap-2">{isLoggingIn ? <Loader2 size={20} className="animate-spin"/> : 'تسجيل الدخول'}</button>
               </form>
             </div>
           </div>
@@ -578,7 +571,7 @@ export default function App() {
                 ) :
 
                 currentUser.role === 'super_admin' ? (
-                  <div className="p-4 md:p-8 max-w-6xl mx-auto"><div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">إدارة المنصة (SaaS)</h2></div><div className="flex gap-2"><button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button><button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button></div></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><table className="w-full text-right"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">التحكم</th></tr></thead><tbody>{tenants.map(cafe => (<tr key={cafe.id} className="border-b border-slate-100 text-sm"><td className="p-5 font-black text-indigo-600">{cafe.id}</td><td className="p-5 font-bold">{cafe.name}</td><td className="p-5 text-center"><button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 mr-2">تبديل</button><button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button></td></tr>))}</tbody></table></div></div>
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto"><div className="flex justify-between items-center mb-8"><div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">إدارة المنصة (SaaS)</h2></div><div className="flex gap-2"><button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button><button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2"><Plus size={17}/> عميل جديد</button></div></div><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"><table className="w-full text-right"><thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 text-slate-500 text-sm font-bold"><tr><th className="p-5">الفرع</th><th className="p-5">الاسم</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">التحكم</th></tr></thead><tbody>{tenants.map(cafe => (<tr key={cafe.id} className="border-b border-slate-100 text-sm"><td className="p-5 font-black text-indigo-600">{cafe.id}</td><td className="p-5 font-bold">{cafe.name}</td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td><td className="p-5 text-center flex justify-center gap-2"><button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 mr-2">تبديل</button><button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button></td></tr>))}</tbody></table></div></div>
                 ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 gap-4 relative">
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
@@ -721,35 +714,14 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ) : currentRoute === 'inventory' ? (
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
-                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 w-8 h-8"/> المواد الخام</h2>
-                      <button onClick={() => openModal('material')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> مادة جديدة</button>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                      <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-right min-w-[500px]">
-                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm"><tr><th className="p-5">المادة</th><th className="p-5">الوحدة</th><th className="p-5">الكمية</th><th className="p-5">التكلفة</th><th className="p-5 text-center">حذف</th></tr></thead>
-                          <tbody>{rawMaterials.map(rm => <tr key={rm.id} className="border-b border-slate-100 dark:border-slate-700 text-sm"><td className="p-5 font-black text-slate-800 dark:text-white">{rm.name}</td><td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td><td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock < 100 ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock}</span></td><td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'material', id: rm.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td></tr>)}</tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                ) : currentRoute === 'products' ? (
-                  // ... (Products, Tables, Expenses, Shifts remain standard)
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4"><h2 className="text-3xl font-black flex items-center gap-3"><Coffee className="text-indigo-500 w-8 h-8"/> المنتجات والوصفات</h2><button onClick={() => openModal('product')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> منتج جديد</button></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">{products.map(p => (<div key={p.id} className="bg-white p-5 rounded-3xl border shadow-sm"><div className="flex justify-between mb-4"><h3 className="font-black text-base">{p.name}</h3><span className="text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl font-black text-sm">{p.price} ج</span></div><div className="space-y-1.5 mb-4">{p.recipe?.map((r, i) => <div key={i} className="text-xs font-bold text-slate-600 bg-slate-50 p-2.5 rounded-xl flex justify-between border"><span>{rawMaterials.find(rm => rm.id === r.materialId)?.name}</span><span className="text-indigo-600">{r.amount} {rawMaterials.find(rm => rm.id === r.materialId)?.unit}</span></div>)}</div><button onClick={() => { setDeleteConfig({ type: 'product', id: p.id }); setActiveModal('delete'); }} className="text-rose-500 bg-rose-50 p-2.5 rounded-xl"><Trash2 size={15}/></button></div>))}</div></div>
-                ) : currentRoute === 'shifts' ? (
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black">سجل الورديات</h2></div><div className="bg-white rounded-3xl shadow-sm border overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[900px]"><thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">الموظف</th><th className="p-5">البداية</th><th className="p-5">النهاية</th><th className="p-5 text-center">العهدة</th><th className="p-5 text-center">المبيعات</th><th className="p-5 text-center">الدرج الفعلي</th><th className="p-5 text-center">العجز / الزيادة</th><th className="p-5 text-center">الحالة</th></tr></thead><tbody>{[...(shifts || [])].reverse().map(shift => { const shiftSales = orders.filter(o => o.shiftId === shift.id).reduce((sum, o) => sum + o.total, 0); const expectedCash = (shift.startingCash || 0) + shiftSales; const variance = shift.status === 'closed' ? ((shift.actualCash || 0) - expectedCash) : 0; return (<tr key={shift.id} className="border-b text-sm"><td className="p-5 font-bold flex items-center gap-2"><Users size={15} className="text-indigo-400"/>{shift.cashierName}</td><td className="p-5 text-xs text-slate-600">{shift.startTime}</td><td className="p-5 text-xs text-slate-600">{shift.endTime || '---'}</td><td className="p-5 text-center font-bold">{shift.startingCash} ج</td><td className="p-5 text-center font-black text-indigo-600">{shiftSales.toFixed(2)} ج</td><td className="p-5 text-center font-bold">{shift.actualCash !== undefined ? `${shift.actualCash} ج` : '---'}</td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${variance < 0 ? 'bg-rose-100 text-rose-700' : variance > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{variance < 0 ? `عجز ${Math.abs(variance).toFixed(2)}` : variance > 0 ? `زيادة ${variance.toFixed(2)}` : 'مضبوط'}</span></td><td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${shift.status === 'open' ? 'bg-amber-100 text-amber-700 animate-pulse' : 'bg-slate-100 text-slate-500'}`}>{shift.status === 'open' ? 'مفتوح' : 'مغلق'}</span></td></tr>);})}</tbody></table></div></div></div>
-                ) : currentRoute === 'tables' ? (
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black flex items-center gap-3"><Utensils className="text-indigo-500 w-8 h-8"/> إدارة الصالة</h2><button onClick={() => openModal('table')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> طاولة جديدة</button></div><div className="grid grid-cols-2 md:grid-cols-5 gap-5">{tables.map(t => (<div key={t.id} className="bg-white p-5 rounded-3xl border flex flex-col items-center shadow-sm relative group"><Armchair className="text-slate-300 mb-3 w-14 h-14"/><h3 className="font-black text-base">{t.name}</h3><p className="text-sm font-bold text-indigo-500">{t.capacity} كراسي</p><button onClick={() => { setDeleteConfig({ type: 'table', id: t.id }); setActiveModal('delete'); }} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 p-1.5 rounded-xl"><Trash2 size={13}/></button></div>))}</div></div>
-                ) : currentRoute === 'expenses' ? (
-                  <div className="p-4 md:p-8 max-w-7xl mx-auto"><div className="flex justify-between items-center mb-8"><h2 className="text-3xl font-black flex items-center gap-3"><Receipt className="text-indigo-500 w-8 h-8"/> المصروفات</h2><button onClick={() => openModal('expense')} className="bg-indigo-600 text-white px-5 py-3 rounded-xl font-bold flex gap-2"><Plus size={17}/> تسجيل مصروف</button></div><div className="bg-white rounded-3xl shadow-sm border overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-right min-w-[500px]"><thead className="bg-slate-50 border-b font-bold text-slate-500 text-sm"><tr><th className="p-5">التاريخ</th><th className="p-5">البيان</th><th className="p-5">المبلغ</th><th className="p-5 text-center">حذف</th></tr></thead><tbody>{expenses.map(ex => <tr key={ex.id} className="border-b text-sm"><td className="p-5 font-bold text-slate-500">{ex.date}</td><td className="p-5 font-black">{ex.description}</td><td className="p-5 font-black text-rose-500">{ex.amount} ج</td><td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'expense', id: ex.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 bg-rose-50 rounded-xl"><Trash2 size={15}/></button></td></tr>)}</tbody></table></div></div></div>
-                ) : null}
+                ) : (
+                  <div className="p-4 md:p-8 text-center text-slate-400 font-bold mt-20"><p>اختر قسماً من القائمة.</p></div>
+                )}
               </div>
             </main>
 
-            {/* ==================== النوافذ المنبثقة ==================== */}
+            {/* ==================== النوافذ المنبثقة (MODALS) ==================== */}
+
             {activeModal === 'globalSettings' && (
               <CustomModal title="إعدادات المنصة" onClose={closeModal}>
                 <form onSubmit={saveGlobalSettings} className="space-y-4">
@@ -766,9 +738,10 @@ export default function App() {
                   <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   
+                  {/* شاشة إنشاء حساب المدير - هتظهر دايما في الإضافة */}
                   {formData.isNew && (
-                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
-                      <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">بيانات دخول مدير الكافيه:</p>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 space-y-3">
+                      <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">📧 بيانات دخول مدير الكافيه (مهم جداً):</p>
                       <input required type="email" name="adminEmail" placeholder="البريد الإلكتروني للمدير" value={formData.adminEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
                       <input required type="text" name="adminPassword" placeholder="كلمة المرور" value={formData.adminPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
                     </div>
@@ -776,6 +749,33 @@ export default function App() {
 
                   <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2 flex justify-center gap-2">
                     {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ بيانات الكافيه'}
+                  </button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'employee' && (
+              <CustomModal title="ملف موظف جديد" onClose={closeModal}>
+                <form onSubmit={saveEmployee} className="space-y-4">
+                  <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-500"/>
+                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-indigo-500"/>
+                  
+                  {/* زرار الكاشير */}
+                  <label className="flex items-center gap-3 text-sm font-black text-slate-700 cursor-pointer p-4 bg-slate-100 border-2 border-slate-200 rounded-2xl hover:bg-slate-200 transition-colors mt-4">
+                    <input type="checkbox" name="createAuth" checked={formData.createAuth || false} onChange={handleFormChange} className="w-6 h-6 accent-indigo-600 rounded"/>
+                    تفعيل حساب دخول (كاشير) لهذا الموظف
+                  </label>
+
+                  {formData.createAuth && (
+                    <div className="bg-indigo-50 p-4 rounded-xl border-2 border-indigo-200 space-y-3 mt-2">
+                      <p className="text-sm font-black text-indigo-800">📧 بيانات دخول الكاشير:</p>
+                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للكاشير" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left outline-none focus:border-indigo-500" dir="ltr"/>
+                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left outline-none focus:border-indigo-500" dir="ltr"/>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-lg flex justify-center gap-2 mt-4">
+                     {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ الموظف'}
                   </button>
                 </form>
               </CustomModal>
@@ -810,29 +810,6 @@ export default function App() {
                     <button onClick={closeModal} className="flex-1 bg-slate-200 text-slate-800 py-3 rounded-xl font-black">إلغاء</button>
                   </div>
                 </div>
-              </CustomModal>
-            )}
-
-            {/* باقي الـ Modals الأساسية (موظف، منتج، مادة خام، طاولة، مصروف، حذف، تقفيل شيفت) */}
-            {activeModal === 'employee' && (
-              <CustomModal title="ملف موظف جديد" onClose={closeModal}>
-                <form onSubmit={saveEmployee} className="space-y-4">
-                  <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-500"/>
-                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 outline-none focus:border-indigo-500"/>
-                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700 cursor-pointer p-2">
-                    <input type="checkbox" name="createAuth" checked={formData.createAuth || false} onChange={handleFormChange} className="w-5 h-5 accent-indigo-600 rounded"/>
-                    هل تريد إنشاء حساب دخول (كاشير) لهذا الموظف؟
-                  </label>
-                  {formData.createAuth && (
-                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-3">
-                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للدخول" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left" dir="ltr"/>
-                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-left" dir="ltr"/>
-                    </div>
-                  )}
-                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-lg flex justify-center gap-2">
-                     {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ الموظف'}
-                  </button>
-                </form>
               </CustomModal>
             )}
 

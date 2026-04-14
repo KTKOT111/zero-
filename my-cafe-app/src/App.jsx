@@ -129,7 +129,7 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // البيانات
-  const [globalSettings, setGlobalSettings]         = useState({ appName: 'كوفي سحابة' });
+  const [globalSettings, setGlobalSettings]         = useState({ appName: '0%' });
   const [tenants, setTenants]                       = useState([]);
   const [rawMaterials, setRawMaterials]             = useState([]);
   const [products, setProducts]                     = useState(defaultProducts);
@@ -573,7 +573,7 @@ export default function App() {
                 <div className="flex items-center gap-4">
                   <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-2xl text-indigo-600"><Coffee size={36}/></div>
                   <div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName || 'كوفي سحابة'}</h1>
+                    <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName || '0%'}</h1>
                     <p className="text-slate-500 font-bold text-sm">بوابة الدخول الموحدة</p>
                   </div>
                 </div>

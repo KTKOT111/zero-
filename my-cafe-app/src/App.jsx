@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-// 1. استيراد دوال تسجيل الدخول بالإيميل والباسورد
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+// 1. استيراد دالة createUserWithEmailAndPassword
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { 
   Coffee, Users, Receipt, Package, LayoutDashboard, 
@@ -12,9 +12,6 @@ import {
   Loader2, WifiOff, RefreshCw, Wifi, ClipboardList, Play, Power, ShieldAlert, Image as ImageIcon, Settings, Store
 } from 'lucide-react';
 
-// ==========================================
-// 1. نظام صائد الأخطاء
-// ==========================================
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -38,9 +35,11 @@ class ErrorBoundary extends React.Component {
 }
 
 // ==========================================
-// 2. إعداد Firebase
+// 2. إعداد Firebase الأساسي والنسخة الخفية
 // ==========================================
 let app = null, auth = null, db = null;
+let secondaryApp = null, secondaryAuth = null; // النسخة الخفية لإنشاء الحسابات
+
 const appId = 'coffee-school-erp';
 
 try {
@@ -56,16 +55,19 @@ try {
       measurementId: "G-WZ9H9WFMP7"
     };
   }
+  // الأبلكيشن الأساسي
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+
+  // الأبلكيشن الخفي (مهم جداً عشان السوبر أدمن ميعملوش تسجيل خروج وهو بيكريت حساب)
+  secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+  secondaryAuth = getAuth(secondaryApp);
+
 } catch(e) {
   console.error("Firebase init error:", e);
 }
 
-// ==========================================
-// 3. المنيو الافتراضي (تم مسح الباسوردات المكشوفة من هنا)
-// ==========================================
 const defaultProducts = [
   { id: 1, name: 'اسبريسو سينجل',      category: 'مشروبات ساخنة', price: 35, stock: 500, image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=200&q=80' },
   { id: 2, name: 'لاتيه',               category: 'مشروبات ساخنة', price: 55, stock: 500, image: 'https://images.unsplash.com/photo-1570968915860-54d5c301fa9f?w=200&q=80' },
@@ -74,9 +76,6 @@ const defaultProducts = [
   { id: 5, name: 'تشيز كيك لوتس',      category: 'حلويات',         price: 80, stock: 20,  image: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=200&q=80' }
 ];
 
-// ==========================================
-// 4. مكونات مساعدة
-// ==========================================
 const CustomModal = ({ title, children, onClose }) => (
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
     <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
@@ -102,12 +101,9 @@ const SafeNumberInput = ({ value, onSave, colorClass }) => {
   );
 };
 
-// ==========================================
-// 5. التطبيق الرئيسي
-// ==========================================
 export default function App() {
   const [fbUser, setFbUser]               = useState(null);
-  const [isDataLoaded, setIsDataLoaded]   = useState(true); // خلينا المبدئي True عشان مفيش دخول مجهول
+  const [isDataLoaded, setIsDataLoaded]   = useState(true);
   const [isOnline, setIsOnline]           = useState(true);
   const [isSyncing, setIsSyncing]         = useState(false);
   const [syncStatus, setSyncStatus]       = useState('idle');
@@ -122,13 +118,11 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // شاشة الدخول (تم تغييرها لتقبل إيميل وباسورد)
   const [email, setEmail]           = useState('');
   const [password, setPassword]     = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // البيانات
   const [globalSettings, setGlobalSettings]         = useState({ appName: '0%' });
   const [tenants, setTenants]                       = useState([]);
   const [rawMaterials, setRawMaterials]             = useState([]);
@@ -146,7 +140,6 @@ export default function App() {
   const [formData, setFormData]         = useState({});
   const [deleteConfig, setDeleteConfig] = useState(null);
 
-  // POS
   const [cart, setCart]                               = useState([]);
   const [orderType, setOrderType]                     = useState('takeaway');
   const [activeTableId, setActiveTableId]             = useState(null);
@@ -180,15 +173,11 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  // ==========================================
-  // Firebase Auth Listener
-  // ==========================================
   useEffect(() => {
     if (!auth) return;
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setFbUser(user);
       if (user) {
-        // لو مسجل دخول، هنروح نجيب صلاحياته من فايرستور
         try {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
@@ -201,7 +190,6 @@ export default function App() {
             });
             setCurrentRoute(userData.role === 'super_admin' ? 'saas_dashboard' : userData.role === 'cashier' ? 'pos' : 'dashboard');
           } else {
-            // يوزر ملوش ملف صلاحيات
             setLoginError("حسابك غير مفعل أو ليس له صلاحيات.");
             auth.signOut();
           }
@@ -215,12 +203,8 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // ==========================================
-  // Firestore - جلب بيانات المنصة (للسوبر أدمن فقط)
-  // ==========================================
   useEffect(() => {
     if (!fbUser || !db || currentUser?.role !== 'super_admin') return;
-
     const platformRef = doc(db, 'coffee_erp_platform', 'config');
     const unsubscribe = onSnapshot(platformRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -231,13 +215,9 @@ export default function App() {
     }, (error) => {
       console.error("Platform Firestore Error:", error);
     });
-
     return () => unsubscribe();
   }, [fbUser, currentUser?.role]);
 
-  // ==========================================
-  // Firestore - جلب بيانات الكافيه (للمدير والكاشير)
-  // ==========================================
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.cafeId) return;
 
@@ -252,7 +232,6 @@ export default function App() {
     setIsTaxEnabled(false);
 
     const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
-    
     const unsubscribe = onSnapshot(cafeRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
@@ -277,49 +256,35 @@ export default function App() {
   const syncPlatformToCloud = useCallback(async (newData) => {
     const currentFbUser = fbUserRef.current;
     if (!db || !currentFbUser) return;
-
     const ref = doc(db, 'coffee_erp_platform', 'config');
-    try {
-      await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-    } catch(err) {
-      console.error("❌ فشل حفظ المنصة:", err);
-    }
+    try { await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); } 
+    catch(err) { console.error("❌ فشل حفظ المنصة:", err); }
   }, []);
 
   const syncToCloud = useCallback(async (newData) => {
     const currentFbUser    = fbUserRef.current;
     const currentCafeUser  = currentUserRef.current;
     const cafeId           = currentCafeUser?.cafeId;
-
     if (!db || !currentFbUser || !cafeId) return;
 
     setSyncStatus('saving');
     const ref = doc(db, 'coffee_erp_cafes', cafeId);
     try {
       await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
-      setSyncStatus('success');
-      setSyncError('');
+      setSyncStatus('success'); setSyncError('');
       setTimeout(() => setSyncStatus('idle'), 2000);
     } catch(err) {
-      setSyncStatus('error');
-      setSyncError(err.message);
+      setSyncStatus('error'); setSyncError(err.message);
     }
   }, []);
 
-  // ==========================================
-  // *** نظام الدخول الجديد الآمن ***
-  // ==========================================
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
     setIsLoggingIn(true);
-
     try {
-      // الاعتماد على فايربيز للتحقق من الإيميل والباسورد
       await signInWithEmailAndPassword(auth, email, password);
-      // بعد الدخول بنجاح، الـ onAuthStateChanged هيشتغل ويجيب الصلاحيات
     } catch (error) {
-      console.error("Login Error:", error);
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         setLoginError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
       } else {
@@ -337,9 +302,6 @@ export default function App() {
     setPassword('');
   };
 
-  // ==========================================
-  // POS Logic
-  // ==========================================
   const activeShift = useMemo(() => {
     if (!currentUser) return null;
     return shifts.find(s => s.status === 'open' && s.cashierName === currentUser.name);
@@ -355,11 +317,8 @@ export default function App() {
     let discountAmount = 0;
     if (currentUser.role === 'admin' && discountValue && parseFloat(discountValue) > 0) {
       const dv = parseFloat(discountValue);
-      if (discountType === 'percent') {
-        discountAmount = Math.min(cartSubtotal, (cartSubtotal * dv) / 100);
-      } else {
-        discountAmount = Math.min(cartSubtotal, dv);
-      }
+      if (discountType === 'percent') discountAmount = Math.min(cartSubtotal, (cartSubtotal * dv) / 100);
+      else discountAmount = Math.min(cartSubtotal, dv);
     }
 
     const subtotalAfterDiscount = cartSubtotal - discountAmount;
@@ -396,15 +355,8 @@ export default function App() {
     setOrders(updatedOrders);
     setActiveTableOrders(updatedActiveTableOrders);
 
-    syncToCloud({
-      rawMaterials: newRawMaterials,
-      orders: updatedOrders,
-      activeTableOrders: updatedActiveTableOrders
-    });
-
-    setCart([]); setLastOrder(newOrder); setOrderType('takeaway');
-    setActiveTableId(null); setIsMobileCartOpen(false);
-    setDiscountValue('');
+    syncToCloud({ rawMaterials: newRawMaterials, orders: updatedOrders, activeTableOrders: updatedActiveTableOrders });
+    setCart([]); setLastOrder(newOrder); setOrderType('takeaway'); setActiveTableId(null); setIsMobileCartOpen(false); setDiscountValue('');
   };
 
   const financialMetrics = useMemo(() => {
@@ -417,13 +369,10 @@ export default function App() {
       if (reportPeriod === 'yearly')    return date.getFullYear() === now.getFullYear();
       return true;
     };
-
     const fOrders   = (orders   || []).filter(o => filterByPeriod(o.timestamp));
     const fExpenses = (expenses || []).filter(e => filterByPeriod(new Date(e.date).getTime()));
-
     const totalRevenue  = fOrders.reduce((sum, o) => sum + o.total, 0);
     const totalExp      = fExpenses.reduce((sum, e) => sum + e.amount, 0);
-
     let totalCogs = 0;
     fOrders.forEach(order => {
       (order.items || []).forEach(item => {
@@ -436,16 +385,12 @@ export default function App() {
         }
       });
     });
-
     return { totalRevenue, totalExpenses: totalExp, totalCogs, netProfit: totalRevenue - (totalExp + totalCogs) };
   }, [orders, expenses, rawMaterials, products, reportPeriod]);
 
-  // ==========================================
-  // Modal Helpers
-  // ==========================================
   const openModal        = (type, data = {}) => { if (type === 'product' && !data.recipe) data.recipe = []; setFormData(data); setActiveModal(type); };
   const closeModal       = () => { setActiveModal(null); setFormData({}); };
-  const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
   const confirmDelete = () => {
     let updates = {};
@@ -470,29 +415,104 @@ export default function App() {
     setGlobalSettings(updated); syncPlatformToCloud({ globalSettings: updated }); closeModal();
   };
 
+  // ==========================================
+  // حفظ العميل الجديد (للسوبر أدمن) + إنشاء حسابه
+  // ==========================================
   const saveTenant = async (e) => {
     e.preventDefault();
     if (formData.isNew) {
       if (tenants.find(t => t.id === formData.id)) { alert('كود الكافيه موجود بالفعل!'); return; }
       
-      // هنوقف إضافة الباسوردات هنا، بعدين هنبقى نضيف نظام إنشاء الحسابات
-      const updated = [...tenants, { 
-        id: formData.id,
-        name: formData.name,
-        subscriptionEnds: formData.subscriptionEnds,
-        status: 'active' 
-      }];
-      setTenants(updated); syncPlatformToCloud({ tenants: updated });
+      try {
+        setSyncStatus('saving');
+        
+        // 1. إنشاء حساب المدير باستخدام النسخة الخفية عشان السوبر أدمن ميخرجش
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.adminEmail, formData.adminPassword);
+        const newUid = userCred.user.uid;
+
+        // 2. تسجيل صلاحيات المدير في جدول users
+        await setDoc(doc(db, 'users', newUid), {
+          email: formData.adminEmail,
+          name: `مدير - ${formData.name}`,
+          role: 'admin',
+          cafeId: formData.id,
+          cafeName: formData.name
+        });
+
+        // 3. حفظ الكافيه في المنصة
+        const updated = [...tenants, { 
+          id: formData.id, 
+          name: formData.name, 
+          subscriptionEnds: formData.subscriptionEnds, 
+          status: 'active' 
+        }];
+        setTenants(updated); 
+        await syncPlatformToCloud({ tenants: updated });
+        
+        // تسجيل خروج من النسخة الخفية للتنظيف
+        await signOut(secondaryAuth); 
+        
+        closeModal();
+        setSyncStatus('success');
+      } catch (err) {
+        console.error(err);
+        alert("خطأ في إنشاء حساب المدير: " + err.message);
+        setSyncStatus('error');
+      }
     } else {
       const updated = tenants.map(t => t.id === formData.id ? { ...t, name: formData.name, subscriptionEnds: formData.subscriptionEnds } : t);
       setTenants(updated); syncPlatformToCloud({ tenants: updated });
+      closeModal();
     }
-    closeModal();
   };
 
   // ==========================================
-  // Loading Screen
+  // حفظ الموظف الجديد (للمدير) + إنشاء حساب الكاشير
   // ==========================================
+  const saveEmployee = async (e) => {
+    e.preventDefault();
+    const empName = formData.name;
+    const empSalary = parseFloat(formData.salary);
+    
+    try {
+      let uid = `emp_${Date.now()}`; // لو معندوش حساب دخول، هندي للموظف آي دي محلي عادي
+      
+      // لو المدير علم على صح عشان يكريت حساب للكاشير ده
+      if (formData.createAuth && formData.empEmail && formData.empPassword) {
+        setSyncStatus('saving');
+        // نستخدم النسخة الخفية عشان المدير ميخرجش
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.empEmail, formData.empPassword);
+        uid = userCred.user.uid; // ناخد الآي دي بتاع فايربيز
+        
+        // نسجله ككاشير في جدول المستخدمين
+        await setDoc(doc(db, 'users', uid), {
+          email: formData.empEmail,
+          name: empName,
+          role: 'cashier',
+          cafeId: currentUser.cafeId,
+          cafeName: currentUser.cafeName
+        });
+        
+        await signOut(secondaryAuth);
+      }
+
+      // نحفظ بياناته كموظف في الكافيه عادي جداً (عشان نقدر نديله راتب وسلفة)
+      genericSave('employees', employees, setEmployees, { 
+        id: uid,
+        name: empName, 
+        salary: empSalary, 
+        advances: formData.advances || 0, 
+        deductions: formData.deductions || 0,
+        hasAuth: formData.createAuth || false 
+      });
+      
+    } catch (err) {
+      console.error(err);
+      alert("خطأ في إنشاء حساب الكاشير: " + err.message);
+      setSyncStatus('error');
+    }
+  };
+
   if (!isDataLoaded) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors" dir="rtl">
       <div className="relative mb-6">
@@ -506,9 +526,6 @@ export default function App() {
     </div>
   );
 
-  // ==========================================
-  // RENDER
-  // ==========================================
   return (
     <ErrorBoundary>
       <div className={isDarkMode ? 'dark' : ''}>
@@ -529,7 +546,6 @@ export default function App() {
           .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         `}</style>
 
-        {/* شريط حالة الاتصال والـ Sync */}
         <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all duration-300
           ${!isOnline ? 'bg-rose-600 text-white'
           : syncStatus === 'error' ? 'bg-rose-600 text-white'
@@ -559,9 +575,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* ============================================================
-             شاشة الدخول (الآمنة بالإيميل والباسورد)
-            ============================================================ */}
         {!currentUser ? (
           <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans transition-colors relative overflow-hidden p-4 pt-10">
             <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -613,11 +626,7 @@ export default function App() {
                   />
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={isLoggingIn}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2"
-                >
+                <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
                   {isLoggingIn ? <Loader2 size={20} className="animate-spin"/> : null}
                   تسجيل الدخول
                 </button>
@@ -626,7 +635,6 @@ export default function App() {
           </div>
 
         ) : currentUser.role === 'customer' ? (
-          // شاشة الزبائن (كما هي)
           <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full transition-colors overflow-y-auto custom-scrollbar pb-10 pt-7">
             <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
               <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee/> منيو {globalSettings.appName || 'الكافيه'}</h1>
@@ -669,12 +677,8 @@ export default function App() {
           </div>
 
         ) : (
-          /* ============================================================
-               الواجهة الأساسية للموظفين
-              ============================================================ */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden transition-colors w-full pt-7">
 
-            {/* القائمة الجانبية للمدير */}
             {currentUser.role === 'admin' && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}/>}
@@ -1120,9 +1124,18 @@ export default function App() {
                   <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   
-                  {/* أزلنا حقول الباسوردات من هنا لأنها هتتعمل كـ إيميلات حقيقية بعدين */}
-                  
-                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2">حفظ بيانات الكافيه</button>
+                  {/* شاشة إنشاء حساب المدير */}
+                  {formData.isNew && (
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
+                      <p className="text-sm font-black text-indigo-800 dark:text-indigo-300">بيانات دخول المدير:</p>
+                      <input required type="email" name="adminEmail" placeholder="البريد الإلكتروني للمدير" value={formData.adminEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                      <input required type="text" name="adminPassword" placeholder="كلمة المرور" value={formData.adminPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2 flex justify-center gap-2">
+                    {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ بيانات الكافيه'}
+                  </button>
                 </form>
               </CustomModal>
             )}
@@ -1135,7 +1148,7 @@ export default function App() {
                   const shiftSales = orders.filter(o => o.shiftId === activeShift.id).reduce((sum, o) => sum + o.total, 0);
                   const updatedShifts = shifts.map(s => s.id === activeShift.id ? { ...s, endTime: new Date().toLocaleString('ar-EG'), actualCash, totalSales: shiftSales, status: 'closed' } : s);
                   setShifts(updatedShifts); syncToCloud({ shifts: updatedShifts });
-                  closeModal(); setCurrentUser(null);
+                  closeModal(); handleLogout(); // خروج بعد التقفيل
                 }}>
                   <div className="bg-indigo-50 dark:bg-indigo-900/30 p-5 rounded-2xl mb-6 border border-indigo-100 dark:border-indigo-800">
                     <p className="text-sm font-bold text-indigo-800 dark:text-indigo-300 flex justify-between mb-3"><span>العهدة عند الاستلام:</span><span>{activeShift.startingCash} ج</span></p>
@@ -1192,10 +1205,26 @@ export default function App() {
 
             {activeModal === 'employee' && (
               <CustomModal title="ملف موظف جديد" onClose={closeModal}>
-                <form onSubmit={(e) => { e.preventDefault(); genericSave('employees', employees, setEmployees, { name: e.target.name.value, salary: parseFloat(e.target.salary.value), advances: 0, deductions: 0 }); }} className="space-y-4">
+                <form onSubmit={saveEmployee} className="space-y-4">
                   <input required name="name" placeholder="الاسم الكامل" value={formData.name || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
                   <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" value={formData.salary || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-sm outline-none focus:border-indigo-500"/>
-                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ الموظف</button>
+                  
+                  {/* شاشة إنشاء حساب الكاشير */}
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer p-2">
+                    <input type="checkbox" name="createAuth" checked={formData.createAuth || false} onChange={handleFormChange} className="w-5 h-5 accent-indigo-600 rounded"/>
+                    هل تريد إنشاء حساب دخول (كاشير) لهذا الموظف؟
+                  </label>
+
+                  {formData.createAuth && (
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-3">
+                      <input required type="email" name="empEmail" placeholder="البريد الإلكتروني للدخول" value={formData.empEmail || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                      <input required type="text" name="empPassword" placeholder="كلمة المرور" value={formData.empPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-left" dir="ltr"/>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={syncStatus === 'saving'} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-lg transition-colors flex justify-center gap-2">
+                     {syncStatus === 'saving' ? <><Loader2 className="animate-spin"/> جاري الإنشاء...</> : 'حفظ الموظف'}
+                  </button>
                 </form>
               </CustomModal>
             )}

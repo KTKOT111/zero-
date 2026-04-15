@@ -1,41 +1,16 @@
 // ============================================================
-// PATCH: إضافة تسجيل مستخدمين Firebase للـ Super Admin
+// PATCH للـ App.js — إضافة إنشاء مستخدمين Firebase تلقائياً
+// المشروع: coffe-school
 // ============================================================
-//
-// الخطوة 1: أضف هذا الاستيراد في أعلى App.js
-// ============================================================
+
+
+// ── الخطوة 1: أضف هذا الاستيراد في أعلى App.js ──────────────
 
 import { createFirebaseUser } from './utils/createFirebaseUser';
 
-// ============================================================
-// الخطوة 2: أضف FIREBASE_API_KEY كـ constant بعد OWNER_EMAIL
-// (خذها من Firebase Console → Project Settings → Web App Config)
-// ============================================================
 
-const FIREBASE_API_KEY = 'AIzaSy...'; // ← ضع Web API Key هنا
-
-// ============================================================
-// الخطوة 3: أضف هذه الـ Handler في قسم "Authentication Handlers"
-// (بعد handleLogout مثلاً)
-// ============================================================
-
-const handleCreateFirebaseUser = useCallback(async (email, password) => {
-  try {
-    const result = await createFirebaseUser(email, password, FIREBASE_API_KEY);
-    showToast(`✅ تم إنشاء الحساب: ${result.email}`, 'success');
-    return true;
-  } catch (err) {
-    showToast(err.message, 'error');
-    return false;
-  }
-}, [showToast]);
-
-// ============================================================
-// الخطوة 4: استبدل modal الـ 'tenant' الحالي بهذا الكود الكامل
-// (يشمل إنشاء المستخدمين في Firebase تلقائياً عند الحفظ)
-// ============================================================
-
-// في saveTenant، استبدل الـ function الحالية بهذه:
+// ── الخطوة 2: استبدل saveTenant الحالية بهذه ─────────────────
+// (ابحث عن: const saveTenant = useCallback)
 
 const saveTenant = useCallback(async (e) => {
   e.preventDefault();
@@ -46,23 +21,23 @@ const saveTenant = useCallback(async (e) => {
       return;
     }
 
-    // ← إنشاء حسابات Firebase تلقائياً
-    const adminCreated = await createFirebaseUser(
-      formData.adminEmail,
-      formData.adminPassword,
-      FIREBASE_API_KEY
-    );
+    // إنشاء حساب المدير في Firebase
+    try {
+      await createFirebaseUser(formData.adminEmail, formData.adminPassword);
+    } catch (err) {
+      showToast(`فشل إنشاء حساب المدير: ${err.message}`, 'error');
+      return;
+    }
 
-    const cashierCreated = await createFirebaseUser(
-      formData.cashierEmail,
-      formData.cashierPassword,
-      FIREBASE_API_KEY
-    );
-
-    if (!adminCreated || !cashierCreated) return; // وقف لو في خطأ
+    // إنشاء حساب الكاشير في Firebase
+    try {
+      await createFirebaseUser(formData.cashierEmail, formData.cashierPassword);
+    } catch (err) {
+      showToast(`فشل إنشاء حساب الكاشير: ${err.message}`, 'error');
+      return;
+    }
 
     const newTenant = { ...formData, status: 'active' };
-    // امسح البيانات الحساسة قبل الحفظ في Firestore
     delete newTenant.isNew;
     delete newTenant.adminPassword;
     delete newTenant.cashierPassword;
@@ -72,7 +47,6 @@ const saveTenant = useCallback(async (e) => {
     syncPlatformToCloud({ tenants: newTenants });
 
   } else {
-    // تعديل بيانات كافيه موجود (بدون تغيير كلمات المرور)
     const newTenants = tenants.map(t =>
       t.id === formData.id ? { ...t, ...formData } : t
     );
@@ -85,10 +59,8 @@ const saveTenant = useCallback(async (e) => {
 }, [formData, tenants, setField, syncPlatformToCloud, closeModal, showToast]);
 
 
-// ============================================================
-// الخطوة 5: استبدل modal 'tenant' في قسم MODALS بهذا الكود
-// يُضاف حقلا كلمة المرور فقط عند إضافة كافيه جديد
-// ============================================================
+// ── الخطوة 3: استبدل modal 'tenant' في قسم MODALS ────────────
+// (ابحث عن: {activeModal === 'tenant' && ( )
 
 {activeModal === 'tenant' && (
   <CustomModal
@@ -97,6 +69,7 @@ const saveTenant = useCallback(async (e) => {
   >
     <form onSubmit={saveTenant} className="space-y-4">
 
+      {/* كود الكافيه — عند الإضافة فقط */}
       {formData.isNew && (
         <div>
           <label className="block text-sm font-black mb-2 dark:text-white">كود الكافيه</label>
@@ -111,6 +84,7 @@ const saveTenant = useCallback(async (e) => {
         </div>
       )}
 
+      {/* اسم الكافيه */}
       <div>
         <label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label>
         <input
@@ -122,6 +96,7 @@ const saveTenant = useCallback(async (e) => {
         />
       </div>
 
+      {/* تاريخ الاشتراك */}
       <div>
         <label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label>
         <input
@@ -134,7 +109,7 @@ const saveTenant = useCallback(async (e) => {
         />
       </div>
 
-      {/* إيميل + كلمة مرور المدير */}
+      {/* إيميل المدير */}
       <div>
         <label className="block text-sm font-black mb-2 dark:text-white">إيميل المدير</label>
         <input
@@ -148,6 +123,8 @@ const saveTenant = useCallback(async (e) => {
           dir="ltr"
         />
       </div>
+
+      {/* كلمة مرور المدير — عند الإضافة فقط */}
       {formData.isNew && (
         <div>
           <label className="block text-sm font-black mb-2 dark:text-white">كلمة مرور المدير</label>
@@ -158,14 +135,14 @@ const saveTenant = useCallback(async (e) => {
             value={formData.adminPassword || ''}
             onChange={handleFormChange}
             placeholder="6 أحرف على الأقل"
+            minLength={6}
             className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"
             dir="ltr"
-            minLength={6}
           />
         </div>
       )}
 
-      {/* إيميل + كلمة مرور الكاشير */}
+      {/* إيميل الكاشير */}
       <div>
         <label className="block text-sm font-black mb-2 dark:text-white">إيميل الكاشير</label>
         <input
@@ -179,6 +156,8 @@ const saveTenant = useCallback(async (e) => {
           dir="ltr"
         />
       </div>
+
+      {/* كلمة مرور الكاشير — عند الإضافة فقط */}
       {formData.isNew && (
         <div>
           <label className="block text-sm font-black mb-2 dark:text-white">كلمة مرور الكاشير</label>
@@ -189,9 +168,9 @@ const saveTenant = useCallback(async (e) => {
             value={formData.cashierPassword || ''}
             onChange={handleFormChange}
             placeholder="6 أحرف على الأقل"
+            minLength={6}
             className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"
             dir="ltr"
-            minLength={6}
           />
         </div>
       )}
@@ -200,7 +179,7 @@ const saveTenant = useCallback(async (e) => {
         type="submit"
         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2"
       >
-        {formData.isNew ? 'إنشاء الحسابات وحفظ' : 'حفظ'}
+        {formData.isNew ? '🔥 إنشاء الحسابات وحفظ' : 'حفظ'}
       </button>
 
     </form>

@@ -1,16 +1,15 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
   Coffee, Users, Receipt, Package, LayoutDashboard, 
   LogOut, Plus, Minus, Trash2, ShoppingCart, 
   Banknote, Wallet, TrendingUp, FileText,
   Moon, Sun, Edit, X, Printer, Menu, 
   Building2, Utensils, Armchair, Save, AlertCircle, 
-  Loader2, WifiOff, RefreshCw, Wifi, ClipboardList, Play, Power, 
-  ShieldAlert, Image as ImageIcon, Settings, Store, 
-  Gamepad2, Bell, Gift, Clock, Calendar, CheckCircle
+  Loader2, WifiOff, RefreshCw, Wifi, ClipboardList, Play, Power, ShieldAlert, Image as ImageIcon, Settings, Store,
+  Bell, Tag, Gift, Gamepad2, Download, Calendar, AlertTriangle, User, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 // ==========================================
@@ -42,8 +41,6 @@ class ErrorBoundary extends React.Component {
 // 2. إعداد Firebase
 // ==========================================
 let app = null, auth = null, db = null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'coffee-school-erp';
-
 try {
   let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
   if (!firebaseConfig) {
@@ -59,29 +56,122 @@ try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-} catch(e) {
-  console.error("Firebase init error:", e);
+} catch(e) { console.error("Firebase init error:", e); }
+
+// ==========================================
+// 3. كلمات المرور
+// ==========================================
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ==========================================
-// كلمات المرور المشفرة 
-// ==========================================
-const OWNER_PASSWORD_HASH = "Ff25802580@@A"; // السوبر ادمن
-
-// ==========================================
-// المنيو الافتراضي
+// 4. المنيو الافتراضي
 // ==========================================
 const defaultProducts = [
-  { id: 1, name: 'اسبريسو سينجل', category: 'مشروبات ساخنة', price: 35, stock: 500, image: '' },
-  { id: 2, name: 'لاتيه', category: 'مشروبات ساخنة', price: 55, stock: 500, image: '' }
+  { id: 1, name: 'اسبريسو سينجل', category: 'مشروبات ساخنة', price: 35, stock: 500, image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=200&q=80' },
+  { id: 2, name: 'لاتيه', category: 'مشروبات ساخنة', price: 55, stock: 500, image: 'https://images.unsplash.com/photo-1570968915860-54d5c301fa9f?w=200&q=80' },
+  { id: 3, name: 'آيس كراميل ميكياتو', category: 'مشروبات باردة', price: 70, stock: 500, image: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=200&q=80' },
+  { id: 4, name: 'موهيتو فراولة', category: 'فرابيه وموهيتو', price: 50, stock: 500, image: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=200&q=80' },
+  { id: 5, name: 'تشيز كيك لوتس', category: 'حلويات', price: 80, stock: 20, image: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=200&q=80' }
 ];
 
 // ==========================================
-// مكونات مساعدة
+// 5. دالة تصدير PDF (باستخدام HTML print)
 // ==========================================
-const CustomModal = ({ title, children, onClose, maxWidth = "max-w-lg" }) => (
+function exportReportPDF(title, data, period, cafeName) {
+  const periodLabels = {
+    daily: 'يومي', weekly: 'أسبوعي', monthly: 'شهري',
+    quarterly: 'ربع سنوي', semi: 'نصف سنوي', yearly: 'سنوي', all: 'كامل'
+  };
+  const periodLabel = periodLabels[period] || period;
+  const now = new Date().toLocaleDateString('ar-EG');
+
+  const rows = data.orders.map((o, i) => `
+    <tr style="border-bottom:1px solid #e2e8f0;${i%2===0?'background:#f8fafc':''}">
+      <td style="padding:8px;text-align:right">${o.date || ''}</td>
+      <td style="padding:8px;text-align:right">${o.note || 'تيك أواي'}</td>
+      <td style="padding:8px;text-align:right">${(o.items||[]).map(it=>`${it.name}(${it.quantity})`).join('، ')}</td>
+      <td style="padding:8px;text-align:center">${o.discountAmount>0?`-${o.discountAmount.toFixed(2)}`:'-'}</td>
+      <td style="padding:8px;text-align:center;font-weight:bold;color:#4f46e5">${o.total.toFixed(2)} ج</td>
+    </tr>
+  `).join('');
+
+  const html = `
+  <!DOCTYPE html><html dir="rtl" lang="ar">
+  <head><meta charset="UTF-8">
+  <style>
+    body{font-family:Arial,sans-serif;margin:20px;color:#1e293b;direction:rtl}
+    h1{color:#4f46e5;font-size:22px;margin-bottom:4px}
+    .meta{color:#64748b;font-size:13px;margin-bottom:20px}
+    .stats{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+    .stat{background:#f1f5f9;border-radius:12px;padding:12px 20px;min-width:140px;text-align:center}
+    .stat-val{font-size:22px;font-weight:bold;color:#4f46e5}
+    .stat-lbl{font-size:12px;color:#64748b;margin-top:4px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#4f46e5;color:white;padding:10px 8px;text-align:right}
+    @media print{body{margin:10px}}
+  </style>
+  </head><body>
+  <h1>تقرير المبيعات — ${periodLabel}</h1>
+  <div class="meta">${cafeName} | تاريخ الطباعة: ${now}</div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val">${data.totalRevenue.toFixed(2)} ج</div><div class="stat-lbl">إجمالي المبيعات</div></div>
+    <div class="stat"><div class="stat-val">${data.ordersCount}</div><div class="stat-lbl">عدد الطلبات</div></div>
+    <div class="stat"><div class="stat-val">${data.totalExpenses.toFixed(2)} ج</div><div class="stat-lbl">المصروفات</div></div>
+    <div class="stat"><div class="stat-val" style="color:${data.netProfit>=0?'#16a34a':'#dc2626'}">${data.netProfit.toFixed(2)} ج</div><div class="stat-lbl">صافي الربح</div></div>
+  </div>
+  <table>
+    <thead><tr><th>التاريخ</th><th>النوع</th><th>الأصناف</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),1000)}<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// تصدير تقرير موظف
+function exportEmployeeReportPDF(employee, orders, cafeName) {
+  const empOrders = orders.filter(o => o.cashierName === employee.name || (o.note && o.note.includes(employee.name)));
+  const totalSales = empOrders.reduce((s, o) => s + o.total, 0);
+  const now = new Date().toLocaleDateString('ar-EG');
+  const rows = empOrders.map((o, i) => `
+    <tr style="border-bottom:1px solid #e2e8f0;${i%2===0?'background:#f8fafc':''}">
+      <td style="padding:8px;text-align:right">${o.date||''}</td>
+      <td style="padding:8px;text-align:right">${(o.items||[]).map(it=>it.name).join('، ')}</td>
+      <td style="padding:8px;text-align:center;font-weight:bold;color:#4f46e5">${o.total.toFixed(2)} ج</td>
+    </tr>
+  `).join('');
+
+  const html = `<!DOCTYPE html><html dir="rtl" lang="ar">
+  <head><meta charset="UTF-8">
+  <style>body{font-family:Arial,sans-serif;margin:20px;direction:rtl}h1{color:#4f46e5}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#4f46e5;color:white;padding:10px 8px;text-align:right}@media print{body{margin:10px}}</style>
+  </head><body>
+  <h1>تقرير معاملات: ${employee.name}</h1>
+  <p style="color:#64748b">${cafeName} | ${now}</p>
+  <div style="display:flex;gap:16px;margin:16px 0">
+    <div style="background:#f1f5f9;padding:12px 20px;border-radius:12px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#4f46e5">${totalSales.toFixed(2)} ج</div><div style="font-size:12px;color:#64748b">إجمالي مبيعاته</div></div>
+    <div style="background:#f1f5f9;padding:12px 20px;border-radius:12px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#4f46e5">${empOrders.length}</div><div style="font-size:12px;color:#64748b">عدد الطلبات</div></div>
+    <div style="background:#f1f5f9;padding:12px 20px;border-radius:12px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#059669">${employee.salary} ج</div><div style="font-size:12px;color:#64748b">الراتب الأساسي</div></div>
+  </div>
+  <table><thead><tr><th>التاريخ</th><th>الأصناف</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table>
+  <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),1000)}<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ==========================================
+// 6. مكونات مساعدة
+// ==========================================
+const CustomModal = ({ title, children, onClose }) => (
   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-    <div className={`bg-white dark:bg-slate-800 rounded-3xl w-full ${maxWidth} shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]`}>
+    <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
       <div className="flex justify-between items-center p-5 border-b border-slate-100 dark:border-slate-700 shrink-0">
         <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">{title}</h3>
         {onClose && <button type="button" onClick={onClose} className="text-slate-400 hover:text-rose-500 transition-colors bg-slate-100 dark:bg-slate-700 p-1.5 rounded-lg"><X size={20}/></button>}
@@ -95,8 +185,7 @@ const SafeNumberInput = ({ value, onSave, colorClass }) => {
   const [val, setVal] = useState(value === 0 || !value ? '' : value);
   useEffect(() => { setVal(value === 0 || !value ? '' : value); }, [value]);
   return (
-    <input 
-      type="number" min="0" step="any" placeholder="0" value={val}
+    <input type="number" min="0" step="any" placeholder="0" value={val}
       onChange={(e) => setVal(e.target.value)}
       onBlur={() => onSave(val === '' ? 0 : parseFloat(val))}
       className={`w-20 md:w-28 p-2 md:p-2.5 text-center border-2 rounded-xl bg-transparent dark:border-slate-600 focus:outline-none font-bold transition-colors ${colorClass}`}
@@ -104,28 +193,16 @@ const SafeNumberInput = ({ value, onSave, colorClass }) => {
   );
 };
 
-// مكون عداد الوقت الحي للبلايستيشن
-const LiveTimer = ({ startTime, rate }) => {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60000); // تحديث كل دقيقة
-    return () => clearInterval(interval);
-  }, []);
-  
-  if (!startTime) return <span>0.00 ج</span>;
-  const hours = (now - startTime) / (1000 * 60 * 60);
-  const cost = hours * rate;
-  return <span className="font-black text-indigo-600 dark:text-indigo-400">{cost.toFixed(2)} ج</span>;
-};
-
 // ==========================================
-// التطبيق الرئيسي
+// 7. التطبيق الرئيسي
 // ==========================================
 export default function App() {
   const [fbUser, setFbUser]               = useState(null);
   const [isDataLoaded, setIsDataLoaded]   = useState(false);
   const [isOnline, setIsOnline]           = useState(true);
+  const [isSyncing, setIsSyncing]         = useState(false);
   const [syncStatus, setSyncStatus]       = useState('idle');
+  const [syncError, setSyncError]         = useState('');
   const [isDarkMode, setIsDarkMode]       = useState(false);
   const [currentUser, setCurrentUser]     = useState(null);
   const [currentRoute, setCurrentRoute]   = useState('dashboard');
@@ -135,251 +212,274 @@ export default function App() {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
 
-  // Auth States
+  const [showOwnerOption, setShowOwnerOption]   = useState(false);
+  const [ownerOptionTimer, setOwnerOptionTimer] = useState(null);
+
   const [loginRole, setLoginRole]   = useState('admin');
   const [cafeCode, setCafeCode]     = useState('');
   const [password, setPassword]     = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [showOwnerOption, setShowOwnerOption]   = useState(false);
 
-  // Global & Tenants (Super Admin Data)
-  const [globalSettings, setGlobalSettings] = useState({ appName: 'كوفي سحابة' });
-  const [tenants, setTenants] = useState([{ id: 'c1', name: 'كوفي سكول', status: 'active', subscriptionEnds: '2026-12-31', adminPassword: 'admin', cashierPassword: '1234' }]);
-
-  // Cafe Data
-  const [rawMaterials, setRawMaterials]             = useState([]);
-  const [products, setProducts]                     = useState(defaultProducts);
-  const [employees, setEmployees]                   = useState([]);
-  const [expenses, setExpenses]                     = useState([]);
-  const [tables, setTables]                         = useState([]);
-  const [shifts, setShifts]                         = useState([]);
-  const [orders, setOrders]                         = useState([]);
-  const [activeTableOrders, setActiveTableOrders]   = useState({});
-  const [playstations, setPlaystations]             = useState([]);
-  const [offers, setOffers]                         = useState([]);
-  const [isTaxEnabled, setIsTaxEnabled]             = useState(false);
+  const [globalSettings, setGlobalSettings]       = useState({ appName: 'كوفي سحابة' });
+  const [tenants, setTenants]                     = useState([{ id: 'c1', name: 'كوفي سكول - فرع 1', status: 'active', subscriptionEnds: '2026-12-31', adminPassword: 'admin', cashierPassword: '1234' }]);
+  const [rawMaterials, setRawMaterials]           = useState([]);
+  const [products, setProducts]                   = useState(defaultProducts);
+  const [employees, setEmployees]                 = useState([]);
+  const [expenses, setExpenses]                   = useState([]);
+  const [tables, setTables]                       = useState([]);
+  const [shifts, setShifts]                       = useState([]);
+  const [orders, setOrders]                       = useState([]);
+  const [activeTableOrders, setActiveTableOrders] = useState({});
+  const [isTaxEnabled, setIsTaxEnabled]           = useState(false);
   const taxRate = 0.14;
+
+  // ===== الميزات الجديدة =====
+  // نظام عروض
+  const [offers, setOffers] = useState([]);
+  // سيستيم بلايستيشن
+  const [psDevices, setPsDevices] = useState([]);
+  const [psSessions, setPsSessions] = useState([]);
+  // إشعارات المخزون
+  const [stockAlertThreshold] = useState(50);
+  // صلاحية المنتجات
+  const [selectedEmployeeReport, setSelectedEmployeeReport] = useState(null);
+  // فترة التقارير
+  const [exportPeriod, setExportPeriod] = useState('daily');
+  // ============================
 
   const [activeModal, setActiveModal]   = useState(null);
   const [formData, setFormData]         = useState({});
   const [deleteConfig, setDeleteConfig] = useState(null);
 
-  // POS State
   const [cart, setCart]                               = useState([]);
   const [orderType, setOrderType]                     = useState('takeaway');
   const [activeTableId, setActiveTableId]             = useState(null);
   const [reportPeriod, setReportPeriod]               = useState('daily');
-  const [reportEmployeeFilter, setReportEmployeeFilter] = useState('all');
   const [lastOrder, setLastOrder]                     = useState(null);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
-  const [selectedOffer, setSelectedOffer]             = useState(null);
+
+  const [discountType, setDiscountType]   = useState('percent');
+  const [discountValue, setDiscountValue] = useState('');
+  const [isHoldingTable, setIsHoldingTable] = useState(false);
+
+  // إشعارات المخزون المنخفض
+  const lowStockItems = useMemo(() => {
+    return rawMaterials.filter(rm => rm.currentStock <= stockAlertThreshold);
+  }, [rawMaterials, stockAlertThreshold]);
+
+  // المنتجات منتهية الصلاحية
+  const expiredProducts = useMemo(() => {
+    const today = new Date();
+    return products.filter(p => p.expiryDate && new Date(p.expiryDate) <= today);
+  }, [products]);
+
+  const nearExpiryProducts = useMemo(() => {
+    const today = new Date();
+    const soon = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return products.filter(p => p.expiryDate && new Date(p.expiryDate) > today && new Date(p.expiryDate) <= soon);
+  }, [products]);
 
   useEffect(() => { fbUserRef.current = fbUser; }, [fbUser]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
-
-  // Dark Mode Setup
-  useEffect(() => {
-    if (isDarkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [isDarkMode]);
-
-  // Online Check
-  useEffect(() => {
-    setIsOnline(navigator.onLine);
-    const on = () => setIsOnline(true); const off = () => setIsOnline(false);
-    window.addEventListener('online', on); window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
-  }, []);
-
-  // Owner Secret Code Reveal
-  const handleCafeCodeChange = (value) => {
-    setCafeCode(value); setLoginError('');
-    if (value === 'Ff25802580') {
-      setShowOwnerOption(true); setCafeCode('');
-      setTimeout(() => setShowOwnerOption(false), 15000);
-    }
-  };
-
-  // Firebase Auth Init (Using Custom Token for Sandbox)
-  useEffect(() => {
-    if (!auth || !db) { setIsDataLoaded(true); return; }
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch(e) { console.error("Auth init err:", e); }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => { setFbUser(user); setIsDataLoaded(true); });
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch Public Platform Data (Tenants)
-  useEffect(() => {
-    if (!fbUser || !db) return;
-    const platformRef = doc(db, 'artifacts', appId, 'public', 'data', 'platform_config');
-    const unsub = onSnapshot(platformRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.globalSettings) setGlobalSettings(data.globalSettings);
-        if (data.tenants) setTenants(data.tenants);
-      }
-    });
-    return () => unsub();
-  }, [fbUser]);
-
-  // Fetch Private Cafe Data
-  useEffect(() => {
-    if (!fbUser || !db || !currentUser?.cafeId) return;
-    const cafeRef = doc(db, 'artifacts', appId, 'public', 'data', `cafe_${currentUser.cafeId}`);
-    const unsub = onSnapshot(cafeRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.rawMaterials) setRawMaterials(data.rawMaterials);
-        if (data.products) setProducts(data.products.length ? data.products : defaultProducts);
-        if (data.employees) setEmployees(data.employees);
-        if (data.expenses) setExpenses(data.expenses);
-        if (data.tables) setTables(data.tables);
-        if (data.shifts) setShifts(data.shifts);
-        if (data.orders) setOrders(data.orders);
-        if (data.activeTableOrders) setActiveTableOrders(data.activeTableOrders);
-        if (data.playstations) setPlaystations(data.playstations);
-        if (data.offers) setOffers(data.offers);
-        if (data.isTaxEnabled !== undefined) setIsTaxEnabled(data.isTaxEnabled);
-      }
-    });
-    return () => unsub();
-  }, [fbUser, currentUser?.cafeId]);
-
-  // Sync Functions
-  const syncPlatformToCloud = useCallback(async (newData) => {
-    if (!db || !fbUserRef.current) return;
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platform_config'), { ...newData, lastUpdated: Date.now() }, { merge: true });
-    } catch(err) { console.error("Platform Sync Error:", err); }
-  }, []);
-
-  const syncToCloud = useCallback(async (newData) => {
-    const user = fbUserRef.current;
-    const cafeUser = currentUserRef.current;
-    if (!db || !user || !cafeUser?.cafeId) return;
-    setSyncStatus('saving');
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `cafe_${cafeUser.cafeId}`), { ...newData, lastUpdated: Date.now() }, { merge: true });
-      setSyncStatus('success'); setTimeout(() => setSyncStatus('idle'), 2000);
-    } catch(err) {
-      console.error("Cafe Sync Error:", err); setSyncStatus('error');
-    }
-  }, []);
-
-  // Login Handler
-  const handleLogin = async (e) => {
-    e.preventDefault(); setLoginError(''); setIsLoggingIn(true);
-    try {
-      if (loginRole === 'super_admin') {
-        if (password === OWNER_PASSWORD_HASH) {
-          setCurrentUser({ name: 'إدارة المنصة', role: 'super_admin', cafeId: null });
-          setCurrentRoute('saas_dashboard'); setShowOwnerOption(false);
-        } else setLoginError('كلمة مرور غير صحيحة.');
-        return;
-      }
-
-      const cafe = tenants.find(t => t.id === cafeCode);
-      if (!cafe) { setLoginError('كود الكافيه غير صحيح.'); return; }
-      if (cafe.status !== 'active') { setLoginError('اشتراك الفرع موقوف.'); return; }
-
-      if (loginRole === 'admin' && password === cafe.adminPassword) {
-        setCurrentUser({ name: `مدير - ${cafe.name}`, role: 'admin', cafeId: cafe.id, cafeName: cafe.name });
-        setCurrentRoute('dashboard');
-      } else if (loginRole === 'cashier' && password === cafe.cashierPassword) {
-        setCurrentUser({ name: `كاشير - ${cafe.name}`, role: 'cashier', cafeId: cafe.id, cafeName: cafe.name });
-        setCurrentRoute('pos');
-      } else {
-        setLoginError('كلمة المرور غير صحيحة.');
-      }
-    } finally { setIsLoggingIn(false); }
-  };
-
-  // Notifications Logic (Expiry & Low Stock)
-  const notificationsList = useMemo(() => {
-    const alerts = [];
-    const today = new Date().getTime();
-    rawMaterials.forEach(rm => {
-      if (rm.currentStock <= 10) alerts.push({ id: `stock_${rm.id}`, type: 'warning', msg: `نواقص: ${rm.name} كمية قليلة (${rm.currentStock})` });
-      if (rm.expiryDate) {
-        const expDate = new Date(rm.expiryDate).getTime();
-        const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-        if (diffDays <= 7 && diffDays >= 0) alerts.push({ id: `exp_${rm.id}`, type: 'danger', msg: `صلاحية: ${rm.name} ينتهي بعد ${diffDays} يوم` });
-        else if (diffDays < 0) alerts.push({ id: `exp_${rm.id}`, type: 'danger', msg: `منتهي الصلاحية: ${rm.name}` });
-      }
-    });
-    return alerts;
-  }, [rawMaterials]);
-
-  // Reports Filter Logic
-  const filteredOrders = useMemo(() => {
-    const now = new Date();
-    return (orders || []).filter(o => {
-      const oDate = new Date(o.timestamp);
-      let timeMatch = true;
-      if (reportPeriod === 'daily') timeMatch = oDate.toDateString() === now.toDateString();
-      else if (reportPeriod === 'weekly') {
-        const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-        timeMatch = oDate >= startOfWeek;
-      }
-      else if (reportPeriod === 'monthly') timeMatch = oDate.getMonth() === now.getMonth() && oDate.getFullYear() === now.getFullYear();
-      else if (reportPeriod === 'quarterly') timeMatch = Math.floor(now.getMonth()/3) === Math.floor(oDate.getMonth()/3) && oDate.getFullYear() === now.getFullYear();
-      else if (reportPeriod === 'semi_annual') timeMatch = Math.floor(now.getMonth()/6) === Math.floor(oDate.getMonth()/6) && oDate.getFullYear() === now.getFullYear();
-      else if (reportPeriod === 'yearly') timeMatch = oDate.getFullYear() === now.getFullYear();
-
-      let empMatch = true;
-      if (reportEmployeeFilter !== 'all') {
-        const shift = shifts.find(s => s.id === o.shiftId);
-        if (shift && shift.cashierName !== reportEmployeeFilter) empMatch = false;
-        if (!shift && o.cashierName !== reportEmployeeFilter) empMatch = false;
-      }
-      return timeMatch && empMatch;
-    }).sort((a,b) => b.timestamp - a.timestamp);
-  }, [orders, reportPeriod, reportEmployeeFilter, shifts]);
 
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
     return cats.map(c => ({ id: c, name: c }));
   }, [products]);
 
+  useEffect(() => {
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+
+  const handleCafeCodeChange = useCallback(async (value) => {
+    setCafeCode(value);
+    setLoginError('');
+    if (value === 'Ff25802580') {
+      if (ownerOptionTimer) clearTimeout(ownerOptionTimer);
+      setShowOwnerOption(true);
+      setCafeCode('');
+      const timer = setTimeout(() => { setShowOwnerOption(false); if (loginRole === 'super_admin') setLoginRole('admin'); }, 15000);
+      setOwnerOptionTimer(timer);
+    }
+  }, [ownerOptionTimer, loginRole]);
+
+  useEffect(() => { return () => { if (ownerOptionTimer) clearTimeout(ownerOptionTimer); }; }, [ownerOptionTimer]);
+
+  useEffect(() => {
+    if (!auth || !db) { setIsDataLoaded(true); return; }
+    let isMounted = true;
+    let unsubscribeAuth = null;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          try { await signInWithCustomToken(auth, __initial_auth_token); }
+          catch { await signInAnonymously(auth); }
+        } else { await signInAnonymously(auth); }
+      } catch(e) { console.error("Auth error:", e); }
+      if (isMounted) {
+        unsubscribeAuth = onAuthStateChanged(auth, (user) => { setFbUser(user); setIsDataLoaded(true); });
+        setTimeout(() => { if (isMounted) setIsDataLoaded(true); }, 3000);
+      }
+    };
+    initAuth();
+    return () => { isMounted = false; if (unsubscribeAuth) unsubscribeAuth(); };
+  }, []);
+
+  useEffect(() => {
+    if (!fbUser || !db) return;
+    const platformRef = doc(db, 'coffee_erp_platform', 'config');
+    const unsubscribe = onSnapshot(platformRef, { includeMetadataChanges: true }, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.globalSettings) setGlobalSettings(data.globalSettings);
+        if (data.tenants) setTenants(data.tenants);
+      }
+      setIsDataLoaded(true);
+    }, (error) => { console.error("Platform Error:", error); setIsDataLoaded(true); });
+    return () => unsubscribe();
+  }, [fbUser]);
+
+  useEffect(() => {
+    if (!fbUser || !db || !currentUser?.cafeId) return;
+    setRawMaterials([]); setProducts(defaultProducts); setEmployees([]);
+    setExpenses([]); setTables([]); setShifts([]); setOrders([]);
+    setActiveTableOrders({}); setIsTaxEnabled(false);
+    setOffers([]); setPsDevices([]); setPsSessions([]);
+
+    const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
+    const unsubscribe = onSnapshot(cafeRef, { includeMetadataChanges: true }, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.rawMaterials) setRawMaterials(data.rawMaterials);
+        if (data.products && data.products.length > 0) setProducts(data.products);
+        if (data.employees) setEmployees(data.employees);
+        if (data.expenses) setExpenses(data.expenses);
+        if (data.tables) setTables(data.tables);
+        if (data.shifts) setShifts(data.shifts);
+        if (data.orders) setOrders(data.orders);
+        if (data.activeTableOrders) setActiveTableOrders(data.activeTableOrders);
+        if (data.isTaxEnabled !== undefined) setIsTaxEnabled(data.isTaxEnabled);
+        if (data.offers) setOffers(data.offers);
+        if (data.psDevices) setPsDevices(data.psDevices);
+        if (data.psSessions) setPsSessions(data.psSessions);
+      }
+      setIsSyncing(snapshot.metadata.hasPendingWrites);
+    }, (error) => { console.error("Cafe Error:", error); });
+    return () => unsubscribe();
+  }, [fbUser, currentUser?.cafeId]);
+
+  const syncPlatformToCloud = useCallback(async (newData) => {
+    const currentFbUser = fbUserRef.current;
+    if (!db || !currentFbUser) return;
+    const ref = doc(db, 'coffee_erp_platform', 'config');
+    try { await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true }); }
+    catch(err) { console.error("Platform sync error:", err); }
+  }, []);
+
+  const syncToCloud = useCallback(async (newData) => {
+    const currentFbUser = fbUserRef.current;
+    const cafeId = currentUserRef.current?.cafeId;
+    if (!db || !currentFbUser || !cafeId) return;
+    setSyncStatus('saving');
+    const ref = doc(db, 'coffee_erp_cafes', cafeId);
+    try {
+      await setDoc(ref, { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
+      setSyncStatus('success'); setSyncError('');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch(err) {
+      setSyncStatus('error');
+      setSyncError(err.code === 'permission-denied' ? 'permission-denied' : err.code === 'unavailable' ? 'offline' : err.message);
+    }
+  }, []);
+
+  // ==========================================
+  // نظام الدخول
+  // ==========================================
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
+    try {
+      if (loginRole === 'super_admin') {
+        if (password === 'Ff25802580@@A') {
+          setCurrentUser({ name: 'مالك المنصة', role: 'super_admin', cafeId: null });
+          setCurrentRoute('saas_dashboard');
+          setShowOwnerOption(false);
+          if (ownerOptionTimer) clearTimeout(ownerOptionTimer);
+        } else { setLoginError('كلمة مرور مالك النظام غير صحيحة.'); }
+        return;
+      }
+      if (!cafeCode) { setLoginError('يرجى إدخال كود الكافيه.'); return; }
+      const cafe = tenants.find(t => t.id === cafeCode);
+      if (!cafe) { setLoginError('كود الكافيه غير مسجل.'); return; }
+      if (cafe.status !== 'active') { setLoginError('اشتراك الكافيه موقوف.'); return; }
+      if (loginRole === 'admin' && password === cafe.adminPassword) {
+        setCurrentUser({ name: `مدير - ${cafe.name}`, role: 'admin', cafeId: cafe.id, cafeName: cafe.name });
+        setCurrentRoute('dashboard');
+      } else if (loginRole === 'cashier' && password === cafe.cashierPassword) {
+        setCurrentUser({ name: `كاشير - ${cafe.name}`, role: 'cashier', cafeId: cafe.id, cafeName: cafe.name });
+        setCurrentRoute('pos');
+      } else { setLoginError('كلمة المرور غير صحيحة.'); }
+    } finally { setIsLoggingIn(false); }
+  };
+
+  // ==========================================
+  // POS Logic
+  // ==========================================
   const activeShift = useMemo(() => {
     if (!currentUser) return null;
     return shifts.find(s => s.status === 'open' && s.cashierName === currentUser.name);
   }, [shifts, currentUser]);
 
-  // POS Process
+  // حساب سعر المنتج بعد العروض
+  const getProductPriceWithOffer = useCallback((product) => {
+    const today = new Date();
+    const activeOffer = offers.find(o => {
+      if (!o.isActive) return false;
+      if (o.productId && o.productId !== product.id) return false;
+      if (o.category && o.category !== product.category) return false;
+      const start = o.startDate ? new Date(o.startDate) : null;
+      const end = o.endDate ? new Date(o.endDate) : null;
+      if (start && today < start) return false;
+      if (end && today > end) return false;
+      return true;
+    });
+    if (!activeOffer) return product.price;
+    if (activeOffer.discountType === 'percent') return Math.max(0, product.price * (1 - activeOffer.discountValue / 100));
+    if (activeOffer.discountType === 'fixed') return Math.max(0, product.price - activeOffer.discountValue);
+    return product.price;
+  }, [offers]);
+
   const processOrder = () => {
     if (cart.length === 0) return;
     if (orderType === 'dine_in' && !activeTableId) return alert('يرجى تحديد الطاولة أولاً!');
-    if (currentUser.role === 'cashier' && !activeShift) return alert('يجب استلام عهدة أولاً!');
+    if (currentUser.role === 'cashier' && !activeShift) return alert('يجب استلام عهدة (فتح شيفت) أولاً!');
 
     const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
-    // حساب الخصم/العروض
     let discountAmount = 0;
-    if (selectedOffer) {
-      if (selectedOffer.type === 'percent') discountAmount = cartSubtotal * (selectedOffer.value / 100);
-      else if (selectedOffer.type === 'fixed') discountAmount = selectedOffer.value;
+    if (currentUser.role === 'admin' && discountValue && parseFloat(discountValue) > 0) {
+      const dv = parseFloat(discountValue);
+      if (discountType === 'percent') discountAmount = Math.min(cartSubtotal, (cartSubtotal * dv) / 100);
+      else discountAmount = Math.min(cartSubtotal, dv);
     }
-
-    const subtotalAfterDiscount = Math.max(0, cartSubtotal - discountAmount);
+    const subtotalAfterDiscount = cartSubtotal - discountAmount;
     const cartTax = isTaxEnabled ? subtotalAfterDiscount * taxRate : 0;
     const totalOrderAmount = subtotalAfterDiscount + cartTax;
-
     const newRawMaterials = [...rawMaterials];
+
     cart.forEach(cartItem => {
-      if(cartItem.isPs) return; // البلايستيشن لا يخصم من المخزن
       const product = products.find(p => p.id === cartItem.id);
       if (product?.recipe) {
         product.recipe.forEach(ingredient => {
@@ -391,8 +491,8 @@ export default function App() {
 
     const newOrder = {
       id: Date.now(), items: cart, subtotal: cartSubtotal,
-      discountAmount, discountType: selectedOffer?.type || null,
-      offerName: selectedOffer?.name || null,
+      discountAmount, discountType: discountAmount > 0 ? discountType : null,
+      discountValue: discountAmount > 0 ? parseFloat(discountValue) : null,
       tax: cartTax, total: totalOrderAmount,
       date: new Date().toLocaleString('ar-EG'),
       timestamp: Date.now(),
@@ -408,46 +508,71 @@ export default function App() {
     setRawMaterials(newRawMaterials);
     setOrders(updatedOrders);
     setActiveTableOrders(updatedActiveTableOrders);
+
     syncToCloud({ rawMaterials: newRawMaterials, orders: updatedOrders, activeTableOrders: updatedActiveTableOrders });
 
     setCart([]); setLastOrder(newOrder); setOrderType('takeaway');
-    setActiveTableId(null); setIsMobileCartOpen(false); setSelectedOffer(null);
+    setActiveTableId(null); setIsMobileCartOpen(false);
+    setDiscountValue('');
   };
 
-  // PS Process
-  const handlePsAction = (ps, action) => {
-    if (action === 'start') {
-      const u = playstations.map(p => p.id === ps.id ? { ...p, status: 'active', startTime: Date.now() } : p);
-      setPlaystations(u); syncToCloud({ playstations: u });
-    } else if (action === 'stop') {
-      const hours = (Date.now() - ps.startTime) / (1000 * 60 * 60);
-      const cost = Math.max(0, hours * ps.hourlyRate);
-      
-      const addToCart = window.confirm(`تكلفة اللعب ${cost.toFixed(2)} ج. هل تريد تحويلها لسلة المبيعات؟`);
-      if (addToCart) {
-        setCart([...cart, { id: 'ps_'+ps.id, name: `لعب - ${ps.name}`, price: cost, quantity: 1, isPs: true }]);
-        setCurrentRoute('pos');
+  const financialMetrics = useMemo(() => {
+    const filterByPeriod = (timestamp) => {
+      if (!timestamp || reportPeriod === 'all') return true;
+      const now = new Date(), date = new Date(timestamp);
+      if (reportPeriod === 'daily')     return date.toDateString() === now.toDateString();
+      if (reportPeriod === 'weekly') {
+        const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay());
+        return date >= startOfWeek;
       }
+      if (reportPeriod === 'monthly')   return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      if (reportPeriod === 'quarterly') return Math.floor(now.getMonth() / 3) === Math.floor(date.getMonth() / 3) && date.getFullYear() === now.getFullYear();
+      if (reportPeriod === 'semi') {
+        const half = Math.floor(now.getMonth() / 6);
+        return Math.floor(date.getMonth() / 6) === half && date.getFullYear() === now.getFullYear();
+      }
+      if (reportPeriod === 'yearly') return date.getFullYear() === now.getFullYear();
+      return true;
+    };
 
-      const u = playstations.map(p => p.id === ps.id ? { ...p, status: 'idle', startTime: null } : p);
-      setPlaystations(u); syncToCloud({ playstations: u });
-    }
-  };
+    const fOrders   = (orders   || []).filter(o => filterByPeriod(o.timestamp));
+    const fExpenses = (expenses || []).filter(e => filterByPeriod(new Date(e.date).getTime()));
 
-  // Modals & Helpers
-  const openModal = (type, data = {}) => { if (type === 'product' && !data.recipe) data.recipe = []; setFormData(data); setActiveModal(type); };
-  const closeModal = () => { setActiveModal(null); setFormData({}); };
+    const totalRevenue  = fOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalExp      = fExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+    let totalCogs = 0;
+    fOrders.forEach(order => {
+      (order.items || []).forEach(item => {
+        const product = (products || []).find(p => p.id === item.id);
+        if (product?.recipe) {
+          product.recipe.forEach(ingredient => {
+            const rawMat = (rawMaterials || []).find(rm => rm.id === ingredient.materialId);
+            if (rawMat) totalCogs += (ingredient.amount * item.quantity * rawMat.costPerUnit);
+          });
+        }
+      });
+    });
+
+    return { totalRevenue, totalExpenses: totalExp, totalCogs, netProfit: totalRevenue - (totalExp + totalCogs), orders: fOrders, ordersCount: fOrders.length };
+  }, [orders, expenses, rawMaterials, products, reportPeriod]);
+
+  // ==========================================
+  // Modal Helpers
+  // ==========================================
+  const openModal        = (type, data = {}) => { if (type === 'product' && !data.recipe) data.recipe = []; setFormData(data); setActiveModal(type); };
+  const closeModal       = () => { setActiveModal(null); setFormData({}); };
   const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const confirmDelete = () => {
     let updates = {};
     if (deleteConfig.type === 'material') { const u = rawMaterials.filter(rm => rm.id !== deleteConfig.id); setRawMaterials(u); updates.rawMaterials = u; }
-    if (deleteConfig.type === 'product')  { const u = products.filter(p => p.id !== deleteConfig.id); setProducts(u); updates.products = u; }
-    if (deleteConfig.type === 'employee') { const u = employees.filter(e => e.id !== deleteConfig.id); setEmployees(u); updates.employees = u; }
-    if (deleteConfig.type === 'table')    { const u = tables.filter(t => t.id !== deleteConfig.id); setTables(u); updates.tables = u; }
-    if (deleteConfig.type === 'expense')  { const u = expenses.filter(ex => ex.id !== deleteConfig.id); setExpenses(u); updates.expenses = u; }
-    if (deleteConfig.type === 'playstation') { const u = playstations.filter(ps => ps.id !== deleteConfig.id); setPlaystations(u); updates.playstations = u; }
-    if (deleteConfig.type === 'offer')    { const u = offers.filter(o => o.id !== deleteConfig.id); setOffers(u); updates.offers = u; }
+    if (deleteConfig.type === 'product')  { const u = products.filter(p => p.id !== deleteConfig.id);       setProducts(u);      updates.products = u; }
+    if (deleteConfig.type === 'employee') { const u = employees.filter(e => e.id !== deleteConfig.id);      setEmployees(u);     updates.employees = u; }
+    if (deleteConfig.type === 'table')    { const u = tables.filter(t => t.id !== deleteConfig.id);         setTables(u);        updates.tables = u; }
+    if (deleteConfig.type === 'expense')  { const u = expenses.filter(ex => ex.id !== deleteConfig.id);     setExpenses(u);      updates.expenses = u; }
+    if (deleteConfig.type === 'offer')    { const u = offers.filter(o => o.id !== deleteConfig.id);         setOffers(u);        updates.offers = u; }
+    if (deleteConfig.type === 'psDevice') { const u = psDevices.filter(d => d.id !== deleteConfig.id);      setPsDevices(u);     updates.psDevices = u; }
     syncToCloud(updates); closeModal();
   };
 
@@ -458,331 +583,450 @@ export default function App() {
     setterFunc(updated); syncToCloud({ [collectionName]: updated }); closeModal();
   };
 
-  // UI Loading
+  const saveGlobalSettings = (e) => {
+    e.preventDefault();
+    const updated = { ...globalSettings, appName: formData.appName };
+    setGlobalSettings(updated); syncPlatformToCloud({ globalSettings: updated }); closeModal();
+  };
+
+  const saveTenant = (e) => {
+    e.preventDefault();
+    if (formData.isNew) {
+      if (tenants.find(t => t.id === formData.id)) { alert('كود الكافيه موجود بالفعل!'); return; }
+      const updated = [...tenants, { ...formData, status: 'active' }];
+      delete updated[updated.length - 1].isNew;
+      setTenants(updated); syncPlatformToCloud({ tenants: updated });
+    } else {
+      const updated = tenants.map(t => t.id === formData.id ? { ...t, ...formData } : t);
+      setTenants(updated); syncPlatformToCloud({ tenants: updated });
+    }
+    closeModal();
+  };
+
+  // حفظ عرض
+  const saveOffer = (e) => {
+    e.preventDefault();
+    genericSave('offers', offers, setOffers, {
+      name: formData.offerName,
+      discountType: formData.offerDiscountType || 'percent',
+      discountValue: parseFloat(formData.offerDiscountValue) || 0,
+      productId: formData.offerProductId || null,
+      category: formData.offerCategory || null,
+      startDate: formData.offerStartDate || null,
+      endDate: formData.offerEndDate || null,
+      isActive: true
+    });
+  };
+
+  // بدء جلسة بلايستيشن
+  const startPsSession = (deviceId) => {
+    const session = {
+      id: `ps_${Date.now()}`,
+      deviceId,
+      deviceName: psDevices.find(d => d.id === deviceId)?.name || '',
+      startTime: Date.now(),
+      startTimeStr: new Date().toLocaleString('ar-EG'),
+      status: 'active',
+      cashierName: currentUser.name
+    };
+    const updated = [...psSessions, session];
+    setPsSessions(updated);
+    syncToCloud({ psSessions: updated });
+  };
+
+  const endPsSession = (sessionId) => {
+    const session = psSessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const device = psDevices.find(d => d.id === session.deviceId);
+    if (!device) return;
+    const durationMs = Date.now() - session.startTime;
+    const durationMin = Math.ceil(durationMs / 60000);
+    const cost = Math.ceil(durationMin / 60) * (device.hourlyRate || 0);
+
+    const endedSession = {
+      ...session,
+      endTime: Date.now(),
+      endTimeStr: new Date().toLocaleString('ar-EG'),
+      durationMin,
+      cost,
+      status: 'ended'
+    };
+    const updatedSessions = psSessions.map(s => s.id === sessionId ? endedSession : s);
+    setPsSessions(updatedSessions);
+
+    // إضافة طلب للفاتورة
+    if (cost > 0) {
+      const psOrder = {
+        id: Date.now(), items: [{ id: `ps_${deviceId}`, name: `${device.name} - ${durationMin} دقيقة`, price: cost, quantity: 1 }],
+        subtotal: cost, discountAmount: 0, tax: 0, total: cost,
+        date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
+        note: `بلايستيشن - ${device.name}`, shiftId: activeShift?.id || null,
+        cashierName: currentUser.name
+      };
+      const updatedOrders = [...orders, psOrder];
+      setOrders(updatedOrders);
+      syncToCloud({ psSessions: updatedSessions, orders: updatedOrders });
+    } else {
+      syncToCloud({ psSessions: updatedSessions });
+    }
+  };
+
+  // ==========================================
+  // Loading Screen
+  // ==========================================
   if (!isDataLoaded) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors" dir="rtl">
-      <Loader2 className="w-16 h-16 animate-spin text-indigo-600 mb-4" />
-      <p className="font-black text-slate-800 dark:text-slate-300 text-lg">جاري تحميل المنصة...</p>
+      <div className="relative mb-6">
+        <div className="w-20 h-20 rounded-full border-4 border-indigo-100 dark:border-slate-700 flex items-center justify-center">
+          <Coffee className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+        </div>
+        <Loader2 className="w-20 h-20 animate-spin text-indigo-600 absolute inset-0" />
+      </div>
+      <p className="font-black text-slate-800 dark:text-slate-300 text-lg mb-2">جاري تحميل المنصة...</p>
     </div>
   );
 
+  // ==========================================
+  // RENDER
+  // ==========================================
   return (
     <ErrorBoundary>
       <div className={isDarkMode ? 'dark' : ''}>
         <style>{`
           @media print {
             body * { visibility: hidden; }
-            .print-area, .print-area * { visibility: visible; }
-            .print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; background: white; color: black; }
+            .print-section, .print-section * { visibility: visible; }
+            .print-section { position: absolute; left: 0; top: 0; width: 100%; }
             .no-print { display: none !important; }
-            @page { size: auto; margin: 10mm; }
           }
-          input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+          input[type="number"]::-webkit-outer-spin-button,
+          input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+          input[type="number"] { -moz-appearance: textfield; }
           .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
           .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
           .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
           .no-scrollbar::-webkit-scrollbar { display: none; }
+          .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+          @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+          .owner-reveal { animation: slideDown 0.3s ease; }
+          @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:0.5} }
+          .pulse-red { animation: pulse-red 1.5s infinite; }
         `}</style>
 
-        {/* ==================== Login Screen ==================== */}
-        {!currentUser ? (
-          <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl w-full max-w-md border-t-8 border-indigo-600 relative overflow-hidden">
-              <div className="flex justify-between items-center mb-8">
-                <div className="flex items-center gap-3"><Coffee className="text-indigo-600 w-10 h-10"/><h1 className="text-2xl font-black dark:text-white">{globalSettings.appName}</h1></div>
-                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={20}/> : <Moon size={20}/>}</button>
-              </div>
-              
-              <button onClick={() => setCurrentUser({ role: 'customer' })} className="w-full mb-6 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white font-black py-4 rounded-xl transition-colors flex justify-center gap-2">
-                <Store size={22}/> تصفح المنيو للزبائن
+        {/* شريط حالة الاتصال */}
+        <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all duration-300
+          ${!isOnline ? 'bg-rose-600 text-white' : syncStatus === 'error' ? 'bg-rose-600 text-white' : syncStatus === 'saving' ? 'bg-amber-500 text-white' : syncStatus === 'success' ? 'bg-emerald-500 text-white' : isSyncing ? 'bg-amber-500 text-white' : fbUser ? 'bg-emerald-600 text-white' : 'bg-slate-500 text-white'}`}>
+          <div className="flex items-center gap-1.5">
+            {!isOnline ? <WifiOff size={13}/> : syncStatus === 'saving' || isSyncing ? <RefreshCw size={13} className="animate-spin"/> : syncStatus === 'error' ? <AlertCircle size={13}/> : <Wifi size={13}/>}
+            <span className="truncate max-w-[260px]">
+              {!isOnline ? 'أوفلاين - سيتم الرفع عند الاتصال' : syncStatus === 'error' ? `❌ خطأ: ${syncError}` : syncStatus === 'saving' ? 'جاري الحفظ...' : syncStatus === 'success' ? '✅ تم الحفظ' : isSyncing ? 'جاري المزامنة...' : fbUser ? `متصل ✓` : 'جاري التحميل...'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* إشعار المخزون المنخفض */}
+            {currentUser && lowStockItems.length > 0 && (
+              <button onClick={() => setCurrentRoute('inventory')} className="flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full pulse-red">
+                <Bell size={11}/> {lowStockItems.length} مواد منخفضة
               </button>
+            )}
+            {/* إشعار المنتجات منتهية الصلاحية */}
+            {currentUser && (expiredProducts.length > 0 || nearExpiryProducts.length > 0) && (
+              <button onClick={() => setCurrentRoute('products')} className="flex items-center gap-1 bg-amber-400/30 px-2 py-0.5 rounded-full">
+                <AlertTriangle size={11}/> {expiredProducts.length + nearExpiryProducts.length} صلاحيات
+              </button>
+            )}
+          </div>
+          <span className="relative flex h-2 w-2 shrink-0">
+            {isOnline && syncStatus !== 'error' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>}
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${!isOnline || syncStatus === 'error' ? 'bg-rose-300' : 'bg-white'}`}></span>
+          </span>
+        </div>
 
-              {loginError && <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-xl flex items-center gap-2 font-bold text-sm"><ShieldAlert size={18}/> {loginError}</div>}
+        {/* ============================================================
+             شاشة الدخول
+            ============================================================ */}
+        {!currentUser ? (
+          <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans transition-colors relative overflow-hidden p-4 pt-10">
+            <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border-t-8 border-indigo-600 z-10 relative">
+              <div className="flex justify-between items-start mb-8">
+                <div className="flex items-center gap-4">
+                  <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-2xl text-indigo-600"><Coffee size={36}/></div>
+                  <div>
+                    <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100">{globalSettings.appName || 'كوفي سحابة'}</h1>
+                    <p className="text-slate-500 font-bold text-sm">بوابة النظام الموحدة</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors">
+                  {isDarkMode ? <Sun size={20}/> : <Moon size={20}/>}
+                </button>
+              </div>
+
+              <div className="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
+                <button onClick={() => setCurrentUser({ role: 'customer' })} className="w-full bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-600 dark:hover:text-white font-black py-4 rounded-xl transition-all shadow-sm text-lg flex justify-center items-center gap-2">
+                  <Store size={22}/> تصفح المنيو الرقمي (للزبائن)
+                </button>
+              </div>
+
+              {loginError && (
+                <div className="mb-5 p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100 dark:border-rose-800">
+                  <ShieldAlert size={18}/> {loginError}
+                </div>
+              )}
 
               <form onSubmit={handleLogin} className="space-y-4">
-                <select value={loginRole} onChange={(e) => { setLoginRole(e.target.value); setLoginError(''); }} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold dark:text-white">
-                  <option value="admin">إدارة الكافيه (مدير)</option>
-                  <option value="cashier">نقطة البيع (كاشير)</option>
-                  {showOwnerOption && <option value="super_admin">🔐 مالك المنصة</option>}
-                </select>
+                <div>
+                  <label className="block text-sm font-bold mb-2 text-slate-700 dark:text-slate-300">تسجيل دخول الموظفين</label>
+                  <select value={loginRole} onChange={(e) => { setLoginRole(e.target.value); setLoginError(''); }}
+                    className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white transition-colors">
+                    <option value="admin">إدارة الكافيه (المدير)</option>
+                    <option value="cashier">نقطة البيع (الكاشير)</option>
+                    {showOwnerOption && <option value="super_admin">🔐 مالك المنصة (SaaS)</option>}
+                  </select>
+                  {showOwnerOption && (
+                    <div className="owner-reveal mt-2 p-3 bg-slate-900 dark:bg-black rounded-xl border border-indigo-500/40 flex items-center gap-2">
+                      <ShieldAlert size={14} className="text-indigo-400 shrink-0"/>
+                      <p className="text-indigo-400 text-[11px] font-black">وضع المالك مفعّل مؤقتاً — سيختفي بعد 15 ثانية</p>
+                    </div>
+                  )}
+                </div>
+
                 {loginRole !== 'super_admin' && (
-                  <input type="text" placeholder="كود الكافيه" value={cafeCode} onChange={(e) => handleCafeCodeChange(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold dark:text-white focus:border-indigo-500 outline-none" />
+                  <input type="text" placeholder="كود الكافيه (مثال: c1)" value={cafeCode} onChange={(e) => handleCafeCodeChange(e.target.value)}
+                    className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors" autoComplete="off"/>
                 )}
-                <input required type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold dark:text-white focus:border-indigo-500 outline-none tracking-widest text-left" dir="ltr" />
-                <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg flex items-center justify-center gap-2">
-                  {isLoggingIn ? <Loader2 className="animate-spin" size={20}/> : "دخول النظام"}
+
+                <input required type="password" placeholder={loginRole === 'super_admin' ? "كلمة مرور مالك المنصة" : loginRole === 'admin' ? "كلمة مرور المدير" : "كلمة مرور الكاشير"}
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors tracking-widest text-left"
+                  dir="ltr" autoComplete="current-password"/>
+
+                <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
+                  {isLoggingIn ? <Loader2 size={20} className="animate-spin"/> : null}
+                  تسجيل الدخول
                 </button>
               </form>
             </div>
           </div>
+
         ) : currentUser.role === 'customer' ? (
-          /* ==================== Customer Menu ==================== */
-          <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
-            <header className="bg-white dark:bg-slate-800 p-4 shadow-sm sticky top-0 z-30 flex justify-between items-center">
-              <h1 className="text-xl font-black text-indigo-600 flex items-center gap-2"><Coffee/> منيو {globalSettings.appName}</h1>
-              <button onClick={() => setCurrentUser(null)} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-lg dark:text-white">دخول الموظفين</button>
+          /* ============================================================
+               المنيو الرقمي للزبائن
+              ============================================================ */
+          <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full transition-colors overflow-y-auto custom-scrollbar pb-10 pt-7">
+            <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
+              <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee/> منيو {globalSettings.appName || 'الكافيه'}</h1>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
+                <button onClick={() => setCurrentUser(null)} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors">دخول الموظفين</button>
+              </div>
             </header>
-            <div className="p-4 flex gap-2 overflow-x-auto no-scrollbar">
-              <button onClick={() => setSelectedCategoryFilter('all')} className={`px-5 py-2 rounded-full font-bold text-sm ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 dark:text-white'}`}>الكل</button>
-              {categories.map(c => <button key={c.id} onClick={() => setSelectedCategoryFilter(c.id)} className={`whitespace-nowrap px-5 py-2 rounded-full font-bold text-sm ${selectedCategoryFilter === c.id ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 dark:text-white'}`}>{c.name}</button>)}
-            </div>
-            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => (
-                <div key={p.id} className="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col">
-                  {p.image ? <img src={p.image} className="w-full h-40 object-cover" /> : <div className="w-full h-40 bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-300"><Coffee size={40}/></div>}
-                  <div className="p-4 flex flex-col gap-2">
-                    <h3 className="font-black text-lg dark:text-white">{p.name}</h3>
-                    <div className="flex justify-between items-center"><span className="font-black text-xl text-indigo-600">{p.price} ج.م</span> {p.stock <= 0 && <span className="text-rose-500 text-xs font-bold">نفد</span>}</div>
-                  </div>
-                </div>
+
+            <div className="p-4 md:px-8 flex gap-2 overflow-x-auto no-scrollbar sticky top-[73px] bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md z-20 pt-4 pb-3">
+              <button onClick={() => setSelectedCategoryFilter('all')} className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>الكل</button>
+              {categories.map(cat => (
+                <button key={cat.id} onClick={() => setSelectedCategoryFilter(cat.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>{cat.name}</button>
               ))}
             </div>
+
+            <div className="p-4 md:p-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 max-w-7xl mx-auto mt-2">
+              {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => {
+                const offeredPrice = getProductPriceWithOffer(p);
+                const hasOffer = offeredPrice < p.price;
+                return (
+                  <div key={p.id} className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-lg transition-all duration-300 group flex flex-col relative">
+                    {hasOffer && <div className="absolute top-3 left-3 z-10 bg-rose-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full">عرض خاص!</div>}
+                    {p.image ? <img src={p.image} alt={p.name} className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500 shrink-0" onError={(e) => { e.target.onerror=null; e.target.src='https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&q=80'; }}/> : <div className="w-full h-48 bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-300 shrink-0"><Coffee size={60}/></div>}
+                    <div className="p-4 flex flex-col flex-1 justify-between gap-3">
+                      <div>
+                        <h3 className="font-black text-lg text-slate-800 dark:text-white mb-2 line-clamp-2">{p.name}</h3>
+                        {p.stock <= 0 ? <span className="text-rose-600 text-xs font-bold bg-rose-50 dark:bg-rose-900/30 px-2.5 py-1 rounded-lg inline-block">نفدت الكمية</span> : <span className="text-emerald-600 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-lg inline-block">متاح للطلب</span>}
+                      </div>
+                      <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-700 pt-3">
+                        <div>
+                          {hasOffer && <span className="text-slate-400 line-through text-sm ml-2">{p.price} ج</span>}
+                          <span className={`font-black text-xl ${hasOffer ? 'text-rose-500' : 'text-indigo-600 dark:text-indigo-400'}`}>{offeredPrice.toFixed(0)} ج.م</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
         ) : (
-          /* ==================== Main Staff App ==================== */
-          <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-hidden w-full">
-            
-            {/* Sidebar */}
+          /* ============================================================
+               الواجهة الأساسية للموظفين
+              ============================================================ */
+          <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden transition-colors w-full pt-7">
+
+            {/* القائمة الجانبية للمدير */}
             {currentUser.role === 'admin' && (
               <>
-                {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}/>}
-                <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform w-64 bg-white dark:bg-slate-900 flex flex-col border-l border-slate-200 dark:border-slate-800 shadow-xl lg:shadow-none`}>
-                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                    <div><h2 className="text-lg font-black dark:text-white flex items-center gap-2"><Coffee className="text-indigo-500"/> الإدارة</h2><p className="text-indigo-600 text-xs font-bold">{currentUser.cafeName}</p></div>
-                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18}/></button>
+                {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}/>}
+                <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform duration-300 w-64 md:w-72 bg-white dark:bg-slate-900 flex flex-col shrink-0 pt-7 border-l border-slate-200 dark:border-slate-800 shadow-xl lg:shadow-none`}>
+                  <div className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0 flex justify-between items-center">
+                    <div>
+                      <h2 className="text-lg font-black flex items-center gap-2 text-slate-800 dark:text-white"><Coffee className="text-indigo-500"/> {globalSettings.appName}</h2>
+                      <p className="text-indigo-600 dark:text-indigo-400 text-xs mt-1 font-bold truncate max-w-[180px]">{currentUser.cafeName}</p>
+                    </div>
+                    <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-500 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18}/></button>
                   </div>
-                  <nav className="flex-1 p-3 overflow-y-auto space-y-1 custom-scrollbar">
+                  <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
                     {[
-                      { id: 'dashboard', icon: <LayoutDashboard size={19}/>, label: 'لوحة القيادة' },
-                      { id: 'reports',   icon: <FileBarChart size={19}/>,    label: 'التقارير الشاملة' },
-                      { id: 'shifts',    icon: <ClipboardList size={19}/>,   label: 'سجل الورديات' },
-                      { id: 'pos',       icon: <ShoppingCart size={19}/>,    label: 'نقطة البيع' },
-                      { id: 'playstation', icon: <Gamepad2 size={19}/>,      label: 'البلايستيشن' },
-                      { id: 'inventory', icon: <Package size={19}/>,         label: 'المواد الخام' },
-                      { id: 'products',  icon: <Coffee size={19}/>,          label: 'المنتجات' },
-                      { id: 'offers',    icon: <Gift size={19}/>,            label: 'العروض' },
-                      { id: 'tables',    icon: <Utensils size={19}/>,        label: 'الصالة والطاولات' },
-                      { id: 'hr',        icon: <Users size={19}/>,           label: 'الموظفين' },
-                      { id: 'expenses',  icon: <Receipt size={19}/>,         label: 'المصروفات' },
+                      { id: 'dashboard',   icon: <LayoutDashboard size={19}/>, label: 'لوحة القيادة' },
+                      { id: 'reports',     icon: <FileText size={19}/>,        label: 'التقارير والتصدير' },
+                      { id: 'shifts',      icon: <ClipboardList size={19}/>,   label: 'سجل الورديات' },
+                      { id: 'inventory',   icon: <Package size={19}/>,         label: 'المواد الخام' },
+                      { id: 'products',    icon: <Coffee size={19}/>,          label: 'المنتجات' },
+                      { id: 'offers',      icon: <Tag size={19}/>,             label: 'العروض والخصومات' },
+                      { id: 'tables',      icon: <Utensils size={19}/>,        label: 'إدارة الصالة' },
+                      { id: 'playstation', icon: <Gamepad2 size={19}/>,        label: 'بلايستيشن' },
+                      { id: 'hr',          icon: <Users size={19}/>,           label: 'الرواتب' },
+                      { id: 'expenses',    icon: <Receipt size={19}/>,         label: 'المصروفات' },
                     ].map(item => (
-                      <button key={item.id} onClick={() => { setCurrentRoute(item.id); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm transition-all ${currentRoute === item.id ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                      <button key={item.id} onClick={() => { setCurrentRoute(item.id); setIsMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold transition-all text-sm ${currentRoute === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-white'}`}>
                         {item.icon} {item.label}
+                        {/* بادج إشعار */}
+                        {item.id === 'inventory' && lowStockItems.length > 0 && <span className="mr-auto bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{lowStockItems.length}</span>}
+                        {item.id === 'products' && (expiredProducts.length > 0) && <span className="mr-auto bg-amber-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{expiredProducts.length}</span>}
                       </button>
                     ))}
+                    <button onClick={() => { setCurrentRoute('pos'); setIsMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold mt-4 border-2 border-indigo-100 dark:border-slate-700 text-sm ${currentRoute === 'pos' ? 'bg-indigo-600 border-indigo-600 text-white' : 'text-indigo-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-slate-800'}`}>
+                      <ShoppingCart size={19}/> نقطة البيع
+                    </button>
                   </nav>
-                  <div className="p-3 border-t border-slate-100 dark:border-slate-800">
-                    <button onClick={() => setCurrentUser(null)} className="w-full flex justify-center gap-2 p-3 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white font-bold text-sm transition-colors"><LogOut size={18}/> تسجيل خروج</button>
+                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الضريبة (14%)</span>
+                      <button onClick={() => {
+                        const newVal = !isTaxEnabled;
+                        setIsTaxEnabled(newVal);
+                        syncToCloud({ isTaxEnabled: newVal });
+                      }} className={`w-12 h-6 rounded-full transition-colors relative ${isTaxEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                        <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isTaxEnabled ? 'left-7' : 'left-1'}`}/>
+                      </button>
+                    </div>
+                    <button onClick={() => { setCurrentUser(null); setPassword(''); setCafeCode(''); }} className="w-full flex justify-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-600 hover:text-white font-bold transition-colors text-sm">
+                      <LogOut size={18}/> تسجيل خروج
+                    </button>
                   </div>
                 </div>
               </>
             )}
 
-            {/* Main Content */}
-            <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
-              {/* Header */}
-              <header className="p-4 flex justify-between items-center shadow-sm bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 z-30">
-                <div className="flex items-center gap-3">
-                  {currentUser.role === 'admin' && <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 bg-slate-100 dark:bg-slate-700 rounded-lg"><Menu size={19}/></button>}
-                  <h1 className="font-black text-lg dark:text-white hidden sm:block">{currentUser.role === 'super_admin' ? 'المنصة المركزية' : currentUser.cafeName}</h1>
+            <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+              {/* الشريط العلوي */}
+              <header className="p-3 md:p-4 md:px-8 flex justify-between items-center shadow-sm z-30 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  {currentUser.role === 'admin' && <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19}/></button>}
+                  <h1 className="font-black text-sm md:text-xl truncate max-w-[160px] md:max-w-none text-slate-800 dark:text-white">
+                    {currentUser.role === 'super_admin' ? (globalSettings.appName || 'المنصة المركزية') : currentUser.role === 'cashier' ? `كاشير — ${currentUser.cafeName}` : currentUser.cafeName}
+                  </h1>
                 </div>
-                <div className="flex items-center gap-3">
-                  {currentUser.role === 'admin' && (
-                    <div className="relative">
-                      <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg relative text-slate-600 dark:text-white">
-                        <Bell size={18}/>
-                        {notificationsList.length > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-pulse">{notificationsList.length}</span>}
-                      </button>
-                      {showNotifications && (
-                        <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-2xl p-2 z-50 max-h-80 overflow-y-auto">
-                          <h4 className="font-black text-sm p-2 border-b border-slate-100 dark:border-slate-700 dark:text-white">إشعارات المخزن</h4>
-                          {notificationsList.length === 0 ? <p className="text-xs text-slate-500 p-4 text-center">لا توجد تنبيهات</p> : 
-                            notificationsList.map(n => (
-                              <div key={n.id} className={`p-3 text-xs font-bold rounded-xl mt-1 border ${n.type === 'danger' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>{n.msg}</div>
-                            ))
-                          }
-                        </div>
-                      )}
-                    </div>
+                <div className="flex items-center gap-2 md:gap-4">
+                  {currentUser.role === 'cashier' && activeShift && (
+                    <button onClick={() => setActiveModal('closeShift')} className="bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors">
+                      <Power size={14}/><span className="hidden md:inline">إنهاء الوردية</span>
+                    </button>
                   )}
-                  {currentUser.role === 'cashier' && activeShift && <button onClick={() => setActiveModal('closeShift')} className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Power size={14}/> تقفيل الوردية</button>}
-                  <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-white">{isDarkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-                  <span className="font-black text-sm text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1.5 rounded-lg">{currentUser.name}</span>
-                  {currentUser.role !== 'admin' && <button onClick={() => setCurrentUser(null)} className="p-2 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg"><LogOut size={18}/></button>}
+                  <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white">
+                    {isDarkMode ? <Sun size={17}/> : <Moon size={17}/>}
+                  </button>
+                  <span className="hidden md:block text-sm font-black text-slate-700 dark:text-slate-300">{currentUser.name}</span>
+                  {(currentUser.role === 'super_admin' || currentUser.role === 'cashier') && (
+                    <button onClick={() => { setCurrentUser(null); setPassword(''); }} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 rounded-lg transition-colors">
+                      <LogOut size={17}/>
+                    </button>
+                  )}
                 </div>
               </header>
 
-              <div className="flex-1 overflow-auto custom-scrollbar relative p-4">
-                
-                {/* Cashier Open Shift */}
+              <div className="flex-1 overflow-auto custom-scrollbar relative">
+
+                {/* شاشة استلام العهدة للكاشير */}
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
-                      <Play className="w-16 h-16 text-indigo-500 mx-auto mb-4"/>
-                      <h2 className="text-2xl font-black mb-6 dark:text-white">بدء وردية جديدة</h2>
+                  <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+                    <div className="bg-white dark:bg-slate-800 p-6 md:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
+                      <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-5"><Play className="w-10 h-10"/></div>
+                      <h2 className="text-2xl font-black mb-2 dark:text-white">أهلاً بك</h2>
+                      <p className="text-slate-500 dark:text-slate-400 mb-7 font-bold text-sm">لتبدأ البيع، يجب فتح شيفت واستلام العهدة.</p>
                       <form onSubmit={(e) => {
                         e.preventDefault();
-                        const ns = { id: 'sh_'+Date.now(), cashierName: currentUser.name, startTime: new Date().toLocaleString('ar-EG'), timestamp: Date.now(), startingCash: parseFloat(e.target.cash.value)||0, status: 'open' };
-                        setShifts([...shifts, ns]); syncToCloud({ shifts: [...shifts, ns] });
+                        const newShift = { id: 'sh_'+Date.now(), cashierName: currentUser.name, startTime: new Date().toLocaleString('ar-EG'), timestamp: Date.now(), startingCash: parseFloat(e.target.startingCash.value)||0, status: 'open' };
+                        const updated = [...shifts, newShift];
+                        setShifts(updated); syncToCloud({ shifts: updated });
                       }}>
-                        <input required name="cash" type="number" step="any" placeholder="العهدة الافتتاحية (الدرج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-center font-black text-2xl mb-6 outline-none dark:text-white focus:border-indigo-500"/>
-                        <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg">استلام وبدء البيع</button>
+                        <div className="text-right mb-5">
+                          <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300">المبلغ الفعلي في الدرج (العهدة)</label>
+                          <input required name="startingCash" type="number" min="0" step="any" placeholder="0.00" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-center font-black text-2xl focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-white"/>
+                        </div>
+                        <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black shadow-lg text-lg flex items-center justify-center gap-2"><Play size={20}/> بدء الوردية</button>
                       </form>
                     </div>
                   </div>
-                ) : 
-                
-                /* ============================================================ */
-                /* Routes */
-                /* ============================================================ */
 
-                currentRoute === 'reports' ? (
-                  <div className="max-w-7xl mx-auto space-y-6">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-2xl font-black dark:text-white flex items-center gap-2"><FileBarChart className="text-indigo-500"/> التقارير الشاملة</h2>
-                      <button onClick={() => window.print()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex gap-2 items-center text-sm no-print"><Printer size={16}/> تصدير PDF / طباعة</button>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 no-print">
-                      <div>
-                        <label className="block text-xs font-bold mb-1 text-slate-500">الفترة الزمنية</label>
-                        <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value)} className="p-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-sm font-bold dark:text-white">
-                          <option value="daily">يومي</option><option value="weekly">أسبوعي</option><option value="monthly">شهري</option>
-                          <option value="quarterly">ربع سنوي</option><option value="semi_annual">نصف سنوي</option><option value="yearly">سنوي</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold mb-1 text-slate-500">فلتر الموظفين</label>
-                        <select value={reportEmployeeFilter} onChange={e => setReportEmployeeFilter(e.target.value)} className="p-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-sm font-bold dark:text-white">
-                          <option value="all">الكل</option>
-                          {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
-                        </select>
+                ) : currentUser.role === 'super_admin' ? (
+                  /* Super Admin Dashboard */
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                      <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة (SaaS)</h2></div>
+                      <div className="flex gap-2 w-full md:w-auto">
+                        <button onClick={() => { setFormData(globalSettings); setActiveModal('globalSettings'); }} className="flex-1 md:flex-none justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Settings size={17}/> إعدادات</button>
+                        <button onClick={() => { setFormData({ isNew: true }); setActiveModal('tenant'); }} className="flex-1 md:flex-none justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Plus size={17}/> عميل جديد</button>
                       </div>
                     </div>
-
-                    <div className="print-area">
-                      <h3 className="text-xl font-black mb-4 text-center hidden print:block border-b-2 pb-2">تقرير المبيعات ({reportPeriod}) - {currentUser.cafeName}</h3>
-                      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                        <table className="w-full text-right text-sm">
-                          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500">
-                            <tr><th className="p-3">رقم</th><th className="p-3">التاريخ</th><th className="p-3">الكاشير</th><th className="p-3">النوع</th><th className="p-3">الإجمالي</th></tr>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[700px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-sm font-bold">
+                            <tr><th className="p-5">كود الفرع</th><th className="p-5">الاسم</th><th className="p-5">تاريخ الانتهاء</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">التحكم</th></tr>
                           </thead>
                           <tbody>
-                            {filteredOrders.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-500 font-bold">لا توجد بيانات لهذه الفترة</td></tr> :
-                             filteredOrders.map(o => (
-                              <tr key={o.id} className="border-b border-slate-100 dark:border-slate-700">
-                                <td className="p-3 font-mono text-xs">{o.id.toString().slice(-6)}</td>
-                                <td className="p-3 font-bold dark:text-slate-300">{o.date}</td>
-                                <td className="p-3 font-bold text-indigo-600 dark:text-indigo-400">{o.cashierName || 'غير مسجل'}</td>
-                                <td className="p-3 text-xs dark:text-slate-400">{o.note}</td>
-                                <td className="p-3 font-black text-emerald-600">{o.total.toFixed(2)} ج</td>
+                            {tenants.map(cafe => (
+                              <tr key={cafe.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm">
+                                <td className="p-5 font-black text-indigo-600 dark:text-indigo-400">{cafe.id}</td>
+                                <td className="p-5 font-bold text-slate-800 dark:text-white">{cafe.name}</td>
+                                <td className="p-5 text-slate-600 dark:text-slate-300">{cafe.subscriptionEnds}</td>
+                                <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td>
+                                <td className="p-5 text-center flex justify-center gap-2">
+                                  <button onClick={() => { const u = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setTenants(u); syncPlatformToCloud({ tenants: u }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white transition-colors">تبديل</button>
+                                  <button onClick={() => { setFormData(cafe); setActiveModal('tenant'); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors">تعديل</button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
-                          {filteredOrders.length > 0 && (
-                            <tfoot className="bg-slate-50 dark:bg-slate-800 font-black">
-                              <tr><td colSpan="4" className="p-4 text-left dark:text-white">إجمالي المبيعات:</td><td className="p-4 text-indigo-600 text-lg">{filteredOrders.reduce((s,o)=>s+o.total,0).toFixed(2)} ج</td></tr>
-                            </tfoot>
-                          )}
                         </table>
                       </div>
                     </div>
                   </div>
 
-                ) : currentRoute === 'playstation' ? (
-                  <div className="max-w-7xl mx-auto space-y-6">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-2xl font-black dark:text-white flex items-center gap-2"><Gamepad2 className="text-indigo-500"/> أجهزة البلايستيشن</h2>
-                      {currentUser.role === 'admin' && <button onClick={() => openModal('playstation')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex gap-2 items-center text-sm"><Plus size={16}/> إضافة جهاز</button>}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {playstations.map(ps => (
-                        <div key={ps.id} className={`p-5 rounded-3xl border-2 shadow-sm transition-all relative ${ps.status === 'active' ? 'bg-indigo-50 border-indigo-500 dark:bg-indigo-900/20' : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                          {currentUser.role === 'admin' && <button onClick={() => {setDeleteConfig({type:'playstation', id:ps.id}); setActiveModal('delete');}} className="absolute top-3 left-3 text-rose-500 p-1.5 bg-rose-50 rounded-lg"><Trash2 size={14}/></button>}
-                          <div className="flex justify-between items-start mb-4">
-                            <div><h3 className="font-black text-lg dark:text-white">{ps.name}</h3><span className="text-xs font-bold text-slate-500">{ps.type} - {ps.hourlyRate} ج/ساعة</span></div>
-                            <Gamepad2 className={`w-10 h-10 ${ps.status === 'active' ? 'text-indigo-600 animate-pulse' : 'text-slate-300 dark:text-slate-600'}`}/>
-                          </div>
-                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl mb-4 text-center border border-slate-100 dark:border-slate-700">
-                            <span className="text-xs text-slate-500 block mb-1">الحساب الحالي</span>
-                            <div className="text-xl">
-                              {ps.status === 'active' ? <LiveTimer startTime={ps.startTime} rate={ps.hourlyRate}/> : <span className="font-black text-slate-400">0.00 ج</span>}
-                            </div>
-                          </div>
-                          {ps.status === 'idle' ? (
-                            <button onClick={() => handlePsAction(ps, 'start')} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-black text-sm flex justify-center gap-2 items-center"><Play size={16}/> بدء الوقت</button>
-                          ) : (
-                            <button onClick={() => handlePsAction(ps, 'stop')} className="w-full bg-rose-500 hover:bg-rose-600 text-white py-3 rounded-xl font-black text-sm flex justify-center gap-2 items-center"><CheckCircle size={16}/> إيقاف وحساب</button>
-                          )}
-                        </div>
-                      ))}
-                      {playstations.length === 0 && <div className="col-span-full text-center text-slate-500 font-bold py-10">لا توجد أجهزة مسجلة.</div>}
-                    </div>
-                  </div>
-
-                ) : currentRoute === 'offers' ? (
-                  <div className="max-w-7xl mx-auto space-y-6">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-2xl font-black dark:text-white flex items-center gap-2"><Gift className="text-indigo-500"/> نظام العروض والخصومات</h2>
-                      <button onClick={() => openModal('offer')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex gap-2 items-center text-sm"><Plus size={16}/> إضافة عرض</button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                      {offers.map(o => (
-                        <div key={o.id} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 relative">
-                          <button onClick={() => {setDeleteConfig({type:'offer', id:o.id}); setActiveModal('delete');}} className="absolute top-3 left-3 text-rose-500 p-1.5 bg-rose-50 rounded-lg"><Trash2 size={14}/></button>
-                          <Gift className="text-amber-500 w-8 h-8 mb-3"/>
-                          <h3 className="font-black text-lg dark:text-white">{o.name}</h3>
-                          <p className="font-bold text-slate-500 text-sm mt-1">{o.type === 'percent' ? `خصم نسبة: ${o.value}%` : `خصم ثابت: ${o.value} ج`}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                ) : currentRoute === 'inventory' ? (
-                  <div className="max-w-7xl mx-auto space-y-6">
-                    <div className="flex justify-between items-center">
-                      <h2 className="text-2xl font-black dark:text-white flex items-center gap-2"><Package className="text-indigo-500"/> المواد الخام والمخزن</h2>
-                      <button onClick={() => openModal('material')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex gap-2 items-center text-sm"><Plus size={16}/> مادة جديدة</button>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                      <table className="w-full text-right text-sm">
-                        <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500">
-                          <tr><th className="p-4">المادة</th><th className="p-4">الكمية المتاحة</th><th className="p-4">التكلفة</th><th className="p-4">تاريخ الصلاحية</th><th className="p-4">حذف</th></tr>
-                        </thead>
-                        <tbody>
-                          {rawMaterials.map(rm => {
-                            const isExpiring = rm.expiryDate && new Date(rm.expiryDate) < new Date(Date.now() + 7*24*60*60*1000);
-                            return (
-                              <tr key={rm.id} className="border-b border-slate-100 dark:border-slate-700">
-                                <td className="p-4 font-black dark:text-white">{rm.name}</td>
-                                <td className="p-4"><span className={`px-3 py-1 rounded-lg font-black text-xs ${rm.currentStock < 50 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock} {rm.unit}</span></td>
-                                <td className="p-4 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td>
-                                <td className={`p-4 font-bold text-xs ${isExpiring ? 'text-rose-600' : 'text-slate-500'}`}>{rm.expiryDate || 'غير محدد'}</td>
-                                <td className="p-4"><button onClick={() => { setDeleteConfig({ type: 'material', id: rm.id }); setActiveModal('delete'); }} className="text-rose-500"><Trash2 size={16}/></button></td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                ) : currentRoute === 'pos' ? (
-                  /* ==================== POS (Point of Sale) ==================== */
-                  <div className="flex flex-col lg:flex-row h-full gap-4">
-                    {/* Catalog */}
-                    <div className="flex-1 flex flex-col gap-3">
-                      <div className="flex gap-2 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                        <button onClick={() => { setOrderType('takeaway'); setActiveTableId(null); }} className={`flex-1 py-2 rounded-lg font-bold text-sm ${orderType === 'takeaway' ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>تيك أواي</button>
-                        <button onClick={() => setOrderType('dine_in')} className={`flex-1 py-2 rounded-lg font-bold text-sm ${orderType === 'dine_in' ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>طاولات صالة</button>
+                ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
+                  /* ==============================
+                     نقطة البيع
+                     ============================== */
+                  <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 lg:p-6 gap-4 lg:gap-6 overflow-hidden relative">
+                    <div className="flex-1 flex flex-col gap-4 overflow-hidden pb-16 lg:pb-0">
+                      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
+                        <button onClick={() => { setOrderType('takeaway'); setActiveTableId(null); }} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'takeaway' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700'}`}>تيك أواي</button>
+                        <button onClick={() => setOrderType('dine_in')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'dine_in' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700'}`}>صالة (طاولات)</button>
                       </div>
 
                       {orderType === 'dine_in' && !activeTableId && (
-                        <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                           {tables.map(t => {
-                            const occ = activeTableOrders[t.id]?.length > 0;
+                            const tableItems = activeTableOrders[t.id]; const isOcc = Array.isArray(tableItems) && tableItems.length > 0;
                             return (
-                              <button key={t.id} onClick={() => { setActiveTableId(t.id); setCart(activeTableOrders[t.id] || []); }} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 ${occ ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white'}`}>
-                                <Armchair size={24}/><span className="font-bold text-xs">{t.name}</span>
+                              <button key={t.id} onClick={() => { setActiveTableId(t.id); const savedCart = activeTableOrders[t.id]; setCart(Array.isArray(savedCart) ? savedCart : []); }}
+                                className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${isOcc ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 hover:border-indigo-400 text-slate-700 dark:text-slate-300'}`}>
+                                <Armchair className="w-7 h-7"/>
+                                <span className="font-black text-xs line-clamp-1">{t.name}</span>
+                                {isOcc && <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">{tableItems.length} صنف</span>}
                               </button>
                             );
                           })}
@@ -790,170 +1034,836 @@ export default function App() {
                       )}
 
                       <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-                        <button onClick={() => setSelectedCategoryFilter('all')} className={`px-4 py-1.5 rounded-lg font-bold text-xs whitespace-nowrap ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 dark:text-white'}`}>الكل</button>
-                        {categories.map(c => <button key={c.id} onClick={() => setSelectedCategoryFilter(c.id)} className={`px-4 py-1.5 rounded-lg font-bold text-xs whitespace-nowrap ${selectedCategoryFilter === c.id ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 dark:text-white'}`}>{c.name}</button>)}
+                        <button onClick={() => setSelectedCategoryFilter('all')} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>الكل</button>
+                        {categories.map(cat => (
+                          <button key={cat.id} onClick={() => setSelectedCategoryFilter(cat.id)} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>{cat.name}</button>
+                        ))}
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto custom-scrollbar content-start flex-1">
-                        {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => (
-                          <button key={p.id} onClick={() => {
-                            if (orderType === 'dine_in' && !activeTableId) return alert('اختر طاولة أولاً');
-                            const ex = cart.find(i => i.id === p.id);
-                            if(ex) setCart(cart.map(i => i.id === p.id ? {...i, quantity: i.quantity+1} : i));
-                            else setCart([...cart, {...p, quantity: 1}]);
-                          }} className="bg-white dark:bg-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col items-center text-center gap-2 hover:border-indigo-500">
-                            {p.image ? <img src={p.image} className="w-14 h-14 rounded-full object-cover"/> : <div className="w-14 h-14 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center"><Coffee size={24}/></div>}
-                            <h3 className="font-bold text-xs line-clamp-1 dark:text-white">{p.name}</h3>
-                            <p className="text-indigo-600 font-black text-xs">{p.price} ج</p>
-                          </button>
-                        ))}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1 custom-scrollbar">
+                        {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => {
+                          const offeredPrice = getProductPriceWithOffer(p);
+                          const hasOffer = offeredPrice < p.price;
+                          return (
+                            <button key={p.id} onClick={() => {
+                              if (orderType === 'dine_in' && !activeTableId) return alert('الرجاء اختيار طاولة أولاً.');
+                              const priceToUse = getProductPriceWithOffer(p);
+                              const existing = cart.find(i => i.id === p.id);
+                              if (existing) setCart(cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i));
+                              else setCart([...cart, { ...p, price: priceToUse, originalPrice: p.price, quantity: 1 }]);
+                            }} className="bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center text-center gap-2 group relative">
+                              {hasOffer && <div className="absolute top-2 right-2 bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">عرض</div>}
+                              {p.image ? <img src={p.image} alt={p.name} className="w-16 h-16 rounded-full object-cover shadow-sm group-hover:scale-110 transition-transform border-2 border-indigo-50 dark:border-slate-700" onError={(e) => { e.target.onerror=null; e.target.src='https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=200&q=80'; }}/> : <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform"><Coffee className="w-7 h-7"/></div>}
+                              {p.stock <= 0 && <span className="absolute top-2 left-2 bg-red-100 text-red-600 text-[9px] font-black px-1.5 py-0.5 rounded-full">نفد</span>}
+                              <h3 className="font-bold text-xs leading-tight line-clamp-2 text-slate-800 dark:text-white">{p.name}</h3>
+                              <div>
+                                {hasOffer && <div className="text-slate-400 line-through text-[10px]">{p.price} ج</div>}
+                                <p className={`font-black text-xs ${hasOffer ? 'text-rose-500' : 'text-indigo-600 dark:text-indigo-400'}`}>{offeredPrice.toFixed(0)} ج.م</p>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    {/* Cart */}
-                    <div className="w-full lg:w-96 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-[60vh] lg:h-full shrink-0">
-                      <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex justify-between items-center rounded-t-2xl">
-                        <h3 className="font-black flex items-center gap-2 dark:text-white"><ShoppingCart className="text-indigo-500"/> السلة {activeTableId && <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md">{tables.find(t=>t.id===activeTableId)?.name}</span>}</h3>
-                        {activeTableId && <button onClick={()=>{setCart([]); setActiveTableId(null);}} className="text-xs text-rose-500">إلغاء الطاولة</button>}
+                    {/* شريط السلة السفلي - موبايل */}
+                    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 p-3 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 flex justify-between items-center">
+                      <div className="font-black text-base text-indigo-600 dark:text-indigo-400">
+                        {(() => {
+                          const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+                          const dv = parseFloat(discountValue) || 0;
+                          const disc = currentUser.role === 'admin' && dv > 0 ? (discountType === 'percent' ? Math.min(sub, sub * dv / 100) : Math.min(sub, dv)) : 0;
+                          return ((sub - disc) * (isTaxEnabled ? 1.14 : 1)).toFixed(2);
+                        })()} ج
                       </div>
-                      
-                      <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                        {cart.length === 0 ? <div className="text-center text-slate-400 mt-10"><Package className="w-10 h-10 mx-auto mb-2 opacity-30"/><p className="text-xs font-bold">السلة فارغة</p></div> : 
-                          cart.map(item => (
-                            <div key={item.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded-xl">
-                              <div className="flex-1">
-                                <p className="font-bold text-xs dark:text-white truncate max-w-[120px]">{item.name}</p>
-                                <p className="text-[10px] text-indigo-600 font-black">{item.price * item.quantity} ج</p>
-                              </div>
-                              {!item.isPs && (
-                                <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-600">
-                                  <button onClick={()=>setCart(cart.map(i=>i.id===item.id?{...i,quantity:i.quantity+1}:i))} className="text-emerald-500"><Plus size={14}/></button>
-                                  <span className="text-xs font-black w-3 text-center dark:text-white">{item.quantity}</span>
-                                  <button onClick={()=>{if(item.quantity>1) setCart(cart.map(i=>i.id===item.id?{...i,quantity:i.quantity-1}:i)); else setCart(cart.filter(i=>i.id!==item.id));}} className="text-rose-500"><Minus size={14}/></button>
+                      <button onClick={() => setIsMobileCartOpen(true)} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg">
+                        <ShoppingCart size={17}/> السلة ({cart.length})
+                      </button>
+                    </div>
+
+                    {/* السلة */}
+                    <div className={`w-full lg:w-[350px] xl:w-[420px] bg-white dark:bg-slate-800 rounded-t-3xl lg:rounded-3xl shadow-2xl lg:shadow-md border border-slate-200 dark:border-slate-700 flex flex-col h-[85vh] lg:h-full fixed lg:relative bottom-0 left-0 right-0 z-40 transition-transform duration-300 ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+                      <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 rounded-t-3xl flex justify-between items-center shrink-0">
+                        <h3 className="font-black text-lg flex items-center gap-2 text-slate-800 dark:text-white"><ShoppingCart className="text-indigo-500 w-5 h-5"/> السلة {activeTableId && <span className="text-indigo-600 text-xs bg-indigo-100 px-2 py-1 rounded-lg">{tables.find(t => t.id === activeTableId)?.name}</span>}</h3>
+                        <div className="flex gap-2">
+                          {activeTableId && <button onClick={() => { setCart([]); setActiveTableId(null); setIsMobileCartOpen(false); }} className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-lg">إلغاء الطاولة</button>}
+                          <button className="lg:hidden text-slate-400 bg-slate-200 dark:bg-slate-700 p-1.5 rounded-lg" onClick={() => setIsMobileCartOpen(false)}><X size={17}/></button>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-auto p-4 space-y-2 custom-scrollbar">
+                        {cart.length === 0
+                          ? <div className="text-center text-slate-400 mt-20"><Package className="w-12 h-12 mx-auto mb-3 opacity-20"/><p className="font-bold text-sm">السلة فارغة</p></div>
+                          : cart.map(item => (
+                            <div key={item.id} className="bg-slate-50 dark:bg-slate-700/50 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-600 flex justify-between items-center">
+                              <div className="flex gap-2.5 items-center">
+                                {item.image ? <img src={item.image} alt={item.name} className="w-10 h-10 rounded-xl object-cover shadow-sm" onError={(e) => { e.target.onerror=null; e.target.src='https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=200&q=80'; }}/> : <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900 text-indigo-500 rounded-xl flex items-center justify-center"><Coffee size={14}/></div>}
+                                <div>
+                                  <p className="font-bold text-slate-800 dark:text-white text-xs mb-0.5 line-clamp-1 max-w-[130px]">{item.name}</p>
+                                  <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{(item.price * item.quantity).toFixed(2)} ج</p>
                                 </div>
-                              )}
-                              {item.isPs && <button onClick={()=>setCart(cart.filter(i=>i.id!==item.id))} className="text-rose-500 p-1"><Trash2 size={14}/></button>}
+                              </div>
+                              <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm">
+                                <button onClick={() => setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="text-emerald-500 p-1 hover:bg-emerald-50 dark:hover:bg-slate-700 rounded-lg"><Plus size={13}/></button>
+                                <span className="font-black w-5 text-center text-xs text-slate-800 dark:text-white">{item.quantity}</span>
+                                <button onClick={() => { if (item.quantity > 1) setCart(cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i)); else setCart(cart.filter(i => i.id !== item.id)); }} className="text-rose-500 p-1 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg"><Minus size={13}/></button>
+                              </div>
                             </div>
                           ))
                         }
                       </div>
-
-                      <div className="p-4 border-t border-slate-100 dark:border-slate-700">
-                        {offers.length > 0 && cart.length > 0 && (
-                          <div className="mb-3">
-                            <select value={selectedOffer?.id || ''} onChange={e => setSelectedOffer(offers.find(o => o.id === e.target.value) || null)} className="w-full p-2 text-xs font-bold border border-amber-200 bg-amber-50 text-amber-700 rounded-lg outline-none">
-                              <option value="">بدون عروض</option>
-                              {offers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-                            </select>
+                      <div className="p-5 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-100 dark:border-slate-700 lg:rounded-b-3xl shrink-0">
+                        {currentUser.role === 'admin' && cart.length > 0 && (
+                          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800">
+                            <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1.5"><Receipt size={13}/> تطبيق خصم (صلاحية المدير)</p>
+                            <div className="flex gap-2">
+                              <div className="flex bg-white dark:bg-slate-800 rounded-xl border border-amber-200 dark:border-amber-800 p-0.5 shrink-0">
+                                <button type="button" onClick={() => setDiscountType('percent')} className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'percent' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}>%</button>
+                                <button type="button" onClick={() => setDiscountType('fixed')} className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all ${discountType === 'fixed' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 dark:text-amber-400'}`}>ج</button>
+                              </div>
+                              <input type="number" min="0" step="any" value={discountValue} onChange={e => setDiscountValue(e.target.value)} placeholder={discountType === 'percent' ? 'نسبة %' : 'مبلغ ثابت'}
+                                className="flex-1 p-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 outline-none focus:border-amber-500 text-center"/>
+                              {discountValue && <button type="button" onClick={() => setDiscountValue('')} className="p-2 bg-white dark:bg-slate-800 border border-amber-200 rounded-xl text-amber-500 hover:bg-amber-100"><X size={14}/></button>}
+                            </div>
                           </div>
                         )}
-                        
-                        {(() => {
-                          const sub = cart.reduce((s,i)=>s+(i.price*i.quantity),0);
-                          let disc = 0;
-                          if(selectedOffer) disc = selectedOffer.type === 'percent' ? sub*(selectedOffer.value/100) : selectedOffer.value;
-                          const total = sub - disc;
-                          return (
-                            <div className="mb-4 space-y-1">
-                              <div className="flex justify-between text-xs font-bold text-slate-500"><span>المجموع:</span><span>{sub.toFixed(2)} ج</span></div>
-                              {disc > 0 && <div className="flex justify-between text-xs font-black text-emerald-600"><span>خصم العرض:</span><span>- {disc.toFixed(2)} ج</span></div>}
-                              <div className="flex justify-between text-lg font-black dark:text-white pt-2 border-t border-slate-200 dark:border-slate-700 mt-2"><span>الإجمالي:</span><span className="text-indigo-600">{Math.max(0, total).toFixed(2)} ج</span></div>
-                            </div>
-                          )
-                        })()}
 
+                        {(() => {
+                          const subtotal = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+                          const dv = parseFloat(discountValue) || 0;
+                          const discountAmt = currentUser.role === 'admin' && dv > 0 ? (discountType === 'percent' ? Math.min(subtotal, subtotal * dv / 100) : Math.min(subtotal, dv)) : 0;
+                          const afterDiscount = subtotal - discountAmt;
+                          const tax = isTaxEnabled ? afterDiscount * 0.14 : 0;
+                          const total = afterDiscount + tax;
+                          return (
+                            <div className="space-y-1.5 mb-4">
+                              <div className="flex justify-between text-sm font-bold text-slate-500 dark:text-slate-400"><span>المجموع الفرعي:</span><span>{subtotal.toFixed(2)} ج</span></div>
+                              {discountAmt > 0 && <div className="flex justify-between text-sm font-black text-emerald-600"><span>الخصم {discountType === 'percent' ? `(${dv}%)` : '(ثابت)'}:</span><span>- {discountAmt.toFixed(2)} ج</span></div>}
+                              {isTaxEnabled && <div className="flex justify-between text-sm font-bold text-slate-500"><span>ضريبة (14%):</span><span>{tax.toFixed(2)} ج</span></div>}
+                              <div className="flex justify-between items-center font-black text-2xl pt-2 border-t border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
+                                <span>الإجمالي:</span><span className="text-indigo-600 dark:text-indigo-400">{total.toFixed(2)} ج</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {orderType === 'dine_in' && activeTableId ? (
-                          <div className="flex gap-2">
-                            <button onClick={()=>{syncToCloud({activeTableOrders: {...activeTableOrders, [activeTableId]: cart}}); setActiveTableOrders({...activeTableOrders, [activeTableId]: cart}); setCart([]); setActiveTableId(null); setOrderType('takeaway');}} className="flex-1 bg-amber-500 text-white py-3 rounded-xl font-black text-sm flex justify-center items-center gap-1"><Save size={16}/> تعليق</button>
-                            <button onClick={processOrder} disabled={cart.length===0} className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50 flex justify-center items-center gap-1"><Banknote size={16}/> دفع</button>
+                          <div className="flex gap-3">
+                            <button onClick={async () => {
+                              if (isHoldingTable || cart.length === 0) return;
+                              setIsHoldingTable(true);
+                              try {
+                                const cartSnapshot = [...cart]; const tableIdSnapshot = activeTableId;
+                                if (!tableIdSnapshot || cartSnapshot.length === 0) return;
+                                const updatedTableOrders = { ...activeTableOrders, [tableIdSnapshot]: cartSnapshot };
+                                setActiveTableOrders(updatedTableOrders);
+                                await syncToCloud({ activeTableOrders: updatedTableOrders });
+                                setCart([]); setActiveTableId(null); setOrderType('takeaway'); setIsMobileCartOpen(false);
+                              } finally { setIsHoldingTable(false); }
+                            }} disabled={cart.length === 0 || isHoldingTable} className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm ${isHoldingTable ? 'bg-amber-400 cursor-wait' : 'bg-amber-500 hover:bg-amber-600'} text-white`}>
+                              {isHoldingTable ? <><RefreshCw size={15} className="animate-spin"/> جاري الحفظ...</> : <><Save size={17}/> حفظ (تعليق)</>}
+                            </button>
+                            <button onClick={processOrder} disabled={cart.length === 0} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-lg text-sm"><Banknote size={17}/> دفع وتقفيل</button>
                           </div>
                         ) : (
-                          <button onClick={processOrder} disabled={cart.length===0} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-sm disabled:opacity-50 flex justify-center items-center gap-2"><Banknote size={18}/> دفع وإصدار الفاتورة</button>
+                          <button onClick={processOrder} disabled={cart.length === 0} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-colors text-lg"><Banknote className="w-5 h-5"/> دفع وإصدار فاتورة</button>
                         )}
                       </div>
                     </div>
+                    {isMobileCartOpen && <div className="fixed inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-sm" onClick={() => setIsMobileCartOpen(false)}/>}
                   </div>
-                ) : 
-                
-                // Fallback for purely Dashboard, Products, etc (Kept minimal to fit file size limits, reuse logic from user's code for remaining views)
-                currentRoute === 'dashboard' ? (
-                  <div className="p-4 max-w-7xl mx-auto"><h2 className="text-2xl font-black mb-6 dark:text-white">نظرة عامة مختصرة</h2><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><div className="bg-indigo-600 text-white p-5 rounded-2xl"><p className="text-sm font-bold opacity-80">طلبات اليوم</p><p className="text-3xl font-black">{orders.filter(o=>new Date(o.timestamp).toDateString()===new Date().toDateString()).length}</p></div><div className="bg-emerald-500 text-white p-5 rounded-2xl"><p className="text-sm font-bold opacity-80">مبيعات اليوم</p><p className="text-3xl font-black">{orders.filter(o=>new Date(o.timestamp).toDateString()===new Date().toDateString()).reduce((s,o)=>s+o.total,0).toFixed(2)} ج</p></div></div></div>
-                ) : (
-                   <div className="p-8 text-center text-slate-500 font-bold">تم نقل معظم الإعدادات للقائمة الجانبية. يرجى اختيار قسم للبدء.</div>
-                )}
+
+                ) : currentRoute === 'dashboard' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white">الملخص العام</h2>
+                      <div className="flex gap-1.5 p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto no-scrollbar w-fit">
+                        {['daily','weekly','monthly','quarterly','semi','yearly','all'].map(p => (
+                          <button key={p} onClick={() => setReportPeriod(p)} className={`px-4 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-colors ${reportPeriod === p ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                            {p === 'daily' ? 'يوم' : p === 'weekly' ? 'أسبوع' : p === 'monthly' ? 'شهر' : p === 'quarterly' ? 'ربع سنوي' : p === 'semi' ? 'نصف سنوي' : p === 'yearly' ? 'سنة' : 'الكل'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden"><div className="absolute -left-4 -top-4 text-emerald-50 dark:text-slate-700/50"><TrendingUp size={100}/></div><div className="relative z-10"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">المبيعات</p><p className="text-4xl font-black text-emerald-600 dark:text-emerald-400">{financialMetrics.totalRevenue.toFixed(2)} ج</p></div></div>
+                      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">مصروفات ورواتب</p><p className="text-4xl font-black text-rose-600 dark:text-rose-400">{financialMetrics.totalExpenses.toFixed(2)} ج</p></div>
+                      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm"><p className="text-slate-500 dark:text-slate-400 text-sm font-bold mb-2">تكلفة الخامات</p><p className="text-4xl font-black text-amber-500 dark:text-amber-400">{financialMetrics.totalCogs.toFixed(2)} ج</p></div>
+                      <div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden"><div className="absolute -left-4 -top-4 text-indigo-500/50"><Wallet size={80}/></div><div className="relative z-10"><p className="text-indigo-200 text-sm font-bold mb-2">الربح الصافي</p><p className="text-4xl font-black">{financialMetrics.netProfit.toFixed(2)} ج</p></div></div>
+                    </div>
+                    
+                    {/* إشعارات المخزون والصلاحيات */}
+                    {(lowStockItems.length > 0 || expiredProducts.length > 0 || nearExpiryProducts.length > 0) && (
+                      <div className="space-y-3">
+                        {lowStockItems.length > 0 && (
+                          <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 flex items-start gap-3">
+                            <Bell className="text-rose-500 shrink-0 mt-0.5 w-5 h-5"/>
+                            <div>
+                              <p className="font-black text-rose-700 dark:text-rose-400 text-sm mb-1">⚠️ مواد خام منخفضة المخزون ({lowStockItems.length})</p>
+                              <p className="text-rose-600 dark:text-rose-300 text-xs font-bold">{lowStockItems.map(rm => `${rm.name} (${rm.currentStock} ${rm.unit})`).join('  •  ')}</p>
+                            </div>
+                          </div>
+                        )}
+                        {expiredProducts.length > 0 && (
+                          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-start gap-3">
+                            <AlertCircle className="text-red-500 shrink-0 mt-0.5 w-5 h-5"/>
+                            <div>
+                              <p className="font-black text-red-700 dark:text-red-400 text-sm mb-1">🚫 منتجات منتهية الصلاحية ({expiredProducts.length})</p>
+                              <p className="text-red-600 dark:text-red-300 text-xs font-bold">{expiredProducts.map(p => p.name).join('  •  ')}</p>
+                            </div>
+                          </div>
+                        )}
+                        {nearExpiryProducts.length > 0 && (
+                          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-start gap-3">
+                            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5 w-5 h-5"/>
+                            <div>
+                              <p className="font-black text-amber-700 dark:text-amber-400 text-sm mb-1">⏰ منتجات ستنتهي صلاحيتها خلال 7 أيام ({nearExpiryProducts.length})</p>
+                              <p className="text-amber-600 dark:text-amber-300 text-xs font-bold">{nearExpiryProducts.map(p => `${p.name} (${p.expiryDate})`).join('  •  ')}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                ) : currentRoute === 'reports' ? (
+                  /* ==============================
+                     صفحة التقارير والتصدير
+                     ============================== */
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
+                    <div className="flex items-center gap-3 mb-2">
+                      <FileText className="text-indigo-600 w-8 h-8"/>
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">التقارير والتصدير</h2>
+                    </div>
+
+                    {/* اختيار الفترة */}
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+                      <h3 className="font-black text-lg mb-4 text-slate-800 dark:text-white flex items-center gap-2"><Calendar size={18}/> اختر الفترة الزمنية</h3>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+                        {[
+                          { v: 'daily', l: 'يومي' }, { v: 'weekly', l: 'أسبوعي' },
+                          { v: 'monthly', l: 'شهري' }, { v: 'quarterly', l: 'ربع سنوي' },
+                          { v: 'semi', l: 'نصف سنوي' }, { v: 'yearly', l: 'سنوي' }
+                        ].map(p => (
+                          <button key={p.v} onClick={() => setReportPeriod(p.v)}
+                            className={`py-3 rounded-xl font-bold text-sm transition-all ${reportPeriod === p.v ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-indigo-50'}`}>
+                            {p.l}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* ملخص الفترة */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl text-center"><p className="text-2xl font-black text-emerald-600">{financialMetrics.totalRevenue.toFixed(2)} ج</p><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 mt-1">المبيعات</p></div>
+                        <div className="bg-rose-50 dark:bg-rose-900/20 p-4 rounded-2xl text-center"><p className="text-2xl font-black text-rose-600">{financialMetrics.totalExpenses.toFixed(2)} ج</p><p className="text-xs font-bold text-rose-700 dark:text-rose-400 mt-1">المصروفات</p></div>
+                        <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-2xl text-center"><p className="text-2xl font-black text-slate-700 dark:text-white">{financialMetrics.ordersCount}</p><p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">عدد الطلبات</p></div>
+                        <div className={`p-4 rounded-2xl text-center ${financialMetrics.netProfit >= 0 ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-rose-50 dark:bg-rose-900/20'}`}>
+                          <p className={`text-2xl font-black ${financialMetrics.netProfit >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>{financialMetrics.netProfit.toFixed(2)} ج</p>
+                          <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 mt-1">صافي الربح</p>
+                        </div>
+                      </div>
+
+                      <button onClick={() => exportReportPDF(
+                        'تقرير المبيعات',
+                        { orders: financialMetrics.orders, totalRevenue: financialMetrics.totalRevenue, totalExpenses: financialMetrics.totalExpenses, netProfit: financialMetrics.netProfit, ordersCount: financialMetrics.ordersCount },
+                        reportPeriod, currentUser.cafeName
+                      )} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg text-lg transition-colors">
+                        <Download size={20}/> تصدير PDF - {reportPeriod === 'daily' ? 'يومي' : reportPeriod === 'weekly' ? 'أسبوعي' : reportPeriod === 'monthly' ? 'شهري' : reportPeriod === 'quarterly' ? 'ربع سنوي' : reportPeriod === 'semi' ? 'نصف سنوي' : 'سنوي'}
+                      </button>
+                    </div>
+
+                    {/* جدول المعاملات */}
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                      <div className="p-5 border-b border-slate-100 dark:border-slate-700">
+                        <h3 className="font-black text-lg text-slate-800 dark:text-white">تفاصيل المعاملات</h3>
+                      </div>
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[700px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold text-sm">
+                            <tr><th className="p-4">التاريخ</th><th className="p-4">الكاشير</th><th className="p-4">النوع</th><th className="p-4">الأصناف</th><th className="p-4 text-center">الخصم</th><th className="p-4 text-center">الإجمالي</th></tr>
+                          </thead>
+                          <tbody>
+                            {[...financialMetrics.orders].reverse().slice(0, 50).map(o => (
+                              <tr key={o.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
+                                <td className="p-4 text-slate-500 dark:text-slate-400 text-xs">{o.date}</td>
+                                <td className="p-4 font-bold text-slate-700 dark:text-slate-300 text-xs">{o.cashierName || '—'}</td>
+                                <td className="p-4"><span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400 px-2 py-1 rounded-lg text-xs font-bold">{o.note || 'تيك أواي'}</span></td>
+                                <td className="p-4 text-xs text-slate-600 dark:text-slate-400 max-w-[200px] truncate">{(o.items||[]).map(it => it.name).join('، ')}</td>
+                                <td className="p-4 text-center text-xs font-bold text-emerald-600">{o.discountAmount > 0 ? `-${o.discountAmount.toFixed(2)} ج` : '—'}</td>
+                                <td className="p-4 text-center font-black text-indigo-600 dark:text-indigo-400">{o.total.toFixed(2)} ج</td>
+                              </tr>
+                            ))}
+                            {financialMetrics.orders.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-bold">لا توجد معاملات في هذه الفترة</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                ) : currentRoute === 'shifts' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8"/><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">سجل الورديات</h2></div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[900px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold text-sm">
+                            <tr><th className="p-5">الموظف</th><th className="p-5">البداية</th><th className="p-5">النهاية</th><th className="p-5 text-center">العهدة</th><th className="p-5 text-center">المبيعات</th><th className="p-5 text-center">الدرج الفعلي</th><th className="p-5 text-center">العجز/الزيادة</th><th className="p-5 text-center">الحالة</th></tr>
+                          </thead>
+                          <tbody>
+                            {[...(shifts || [])].reverse().map(shift => {
+                              const shiftSales = orders.filter(o => o.shiftId === shift.id).reduce((sum, o) => sum + o.total, 0);
+                              const expectedCash = (shift.startingCash || 0) + shiftSales;
+                              const variance = shift.status === 'closed' ? ((shift.actualCash || 0) - expectedCash) : 0;
+                              return (
+                                <tr key={shift.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-sm">
+                                  <td className="p-5 font-bold text-slate-800 dark:text-white flex items-center gap-2"><Users size={15} className="text-indigo-400"/>{shift.cashierName}</td>
+                                  <td className="p-5 text-xs text-slate-600 dark:text-slate-400">{shift.startTime}</td>
+                                  <td className="p-5 text-xs text-slate-600 dark:text-slate-400">{shift.endTime || '---'}</td>
+                                  <td className="p-5 text-center font-bold">{shift.startingCash} ج</td>
+                                  <td className="p-5 text-center font-black text-indigo-600 dark:text-indigo-400">{shiftSales.toFixed(2)} ج</td>
+                                  <td className="p-5 text-center font-bold">{shift.actualCash !== undefined ? `${shift.actualCash} ج` : '---'}</td>
+                                  <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${variance < 0 ? 'bg-rose-100 text-rose-700' : variance > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>{variance < 0 ? `عجز ${Math.abs(variance).toFixed(2)}` : variance > 0 ? `زيادة ${variance.toFixed(2)}` : 'مضبوط'}</span></td>
+                                  <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-lg text-xs font-black ${shift.status === 'open' ? 'bg-amber-100 text-amber-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{shift.status === 'open' ? 'مفتوح' : 'مغلق'}</span></td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                ) : currentRoute === 'inventory' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 w-8 h-8"/> المواد الخام</h2>
+                      <button onClick={() => openModal('material')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> مادة جديدة</button>
+                    </div>
+                    {lowStockItems.length > 0 && (
+                      <div className="mb-6 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 flex items-center gap-3">
+                        <Bell className="text-rose-500 shrink-0 w-5 h-5"/>
+                        <p className="text-rose-700 dark:text-rose-400 font-black text-sm">تنبيه: {lowStockItems.length} مادة وصلت للحد الأدنى من المخزون!</p>
+                      </div>
+                    )}
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[500px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm">
+                            <tr><th className="p-5">المادة</th><th className="p-5">الوحدة</th><th className="p-5">الكمية</th><th className="p-5">التكلفة</th><th className="p-5 text-center">حذف</th></tr>
+                          </thead>
+                          <tbody>
+                            {rawMaterials.map(rm => (
+                              <tr key={rm.id} className={`border-b border-slate-100 dark:border-slate-700 text-sm ${rm.currentStock <= stockAlertThreshold ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
+                                <td className="p-5 font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                  {rm.currentStock <= stockAlertThreshold && <Bell size={14} className="text-rose-500 shrink-0"/>}
+                                  {rm.name}
+                                </td>
+                                <td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td>
+                                <td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock <= 0 ? 'bg-red-100 text-red-700' : rm.currentStock <= stockAlertThreshold ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock}</span></td>
+                                <td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td>
+                                <td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'material', id: rm.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                ) : currentRoute === 'products' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Coffee className="text-indigo-500 w-8 h-8"/> المنتجات والوصفات</h2>
+                      <button onClick={() => openModal('product')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> منتج جديد</button>
+                    </div>
+                    {(expiredProducts.length > 0 || nearExpiryProducts.length > 0) && (
+                      <div className="mb-6 space-y-3">
+                        {expiredProducts.length > 0 && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-3"><AlertCircle className="text-red-500 w-5 h-5 shrink-0"/><p className="text-red-700 dark:text-red-400 font-black text-sm">🚫 منتجات منتهية الصلاحية: {expiredProducts.map(p => p.name).join('، ')}</p></div>}
+                        {nearExpiryProducts.length > 0 && <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-center gap-3"><AlertTriangle className="text-amber-500 w-5 h-5 shrink-0"/><p className="text-amber-700 dark:text-amber-400 font-black text-sm">⏰ تنتهي قريباً: {nearExpiryProducts.map(p => `${p.name} (${p.expiryDate})`).join('، ')}</p></div>}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {products.map(p => {
+                        const isExp = p.expiryDate && new Date(p.expiryDate) <= new Date();
+                        const isNearExp = p.expiryDate && !isExp && new Date(p.expiryDate) <= new Date(Date.now() + 7*24*60*60*1000);
+                        return (
+                          <div key={p.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${isExp ? 'border-red-300 dark:border-red-700' : isNearExp ? 'border-amber-300 dark:border-amber-700' : 'border-slate-200 dark:border-slate-700'}`}>
+                            <div className="flex justify-between mb-4">
+                              <div className="flex items-center gap-3">
+                                {p.image ? <img src={p.image} alt={p.name} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-700" onError={(e) => { e.target.onerror=null; e.target.src='https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=200&q=80'; }}/> : <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-500 flex items-center justify-center"><Coffee size={19}/></div>}
+                                <div>
+                                  <h3 className="font-black text-base text-slate-800 dark:text-white line-clamp-1">{p.name}</h3>
+                                  {p.expiryDate && <p className={`text-[10px] font-bold mt-0.5 ${isExp ? 'text-red-600' : isNearExp ? 'text-amber-600' : 'text-slate-400'}`}>{isExp ? '🚫 منتهي' : isNearExp ? '⏰ ينتهي قريباً' : '✓ صالح'} — {p.expiryDate}</p>}
+                                </div>
+                              </div>
+                              <span className="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1 rounded-xl font-black h-fit text-sm">{p.price} ج</span>
+                            </div>
+                            <div className="space-y-1.5 mb-4">{p.recipe?.map((r, i) => <div key={i} className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/50 p-2.5 rounded-xl flex justify-between border border-slate-100 dark:border-slate-600"><span>{rawMaterials.find(rm => rm.id === r.materialId)?.name}</span><span className="text-indigo-600 dark:text-indigo-400">{r.amount} {rawMaterials.find(rm => rm.id === r.materialId)?.unit}</span></div>)}</div>
+                            <button onClick={() => { setDeleteConfig({ type: 'product', id: p.id }); setActiveModal('delete'); }} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 p-2.5 rounded-xl transition-colors"><Trash2 size={15}/></button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                ) : currentRoute === 'offers' ? (
+                  /* ==============================
+                     نظام العروض
+                     ============================== */
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Tag className="text-indigo-500 w-8 h-8"/> العروض والخصومات</h2>
+                      <button onClick={() => openModal('offer')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> عرض جديد</button>
+                    </div>
+                    {offers.length === 0 ? (
+                      <div className="text-center py-20 text-slate-400">
+                        <Gift className="w-20 h-20 mx-auto mb-4 opacity-20"/>
+                        <p className="font-bold text-lg">لا توجد عروض مفعّلة</p>
+                        <p className="text-sm mt-2">أضف عروضاً لتطبيقها تلقائياً على المنتجات</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {offers.map(offer => {
+                          const today = new Date();
+                          const isActive = offer.isActive && (!offer.endDate || new Date(offer.endDate) >= today) && (!offer.startDate || new Date(offer.startDate) <= today);
+                          return (
+                            <div key={offer.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${isActive ? 'border-emerald-300 dark:border-emerald-700' : 'border-slate-200 dark:border-slate-700 opacity-60'}`}>
+                              <div className="flex justify-between items-start mb-3">
+                                <h3 className="font-black text-lg text-slate-800 dark:text-white">{offer.name}</h3>
+                                <span className={`px-3 py-1 rounded-xl text-xs font-black ${isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{isActive ? 'مفعّل' : 'منتهي'}</span>
+                              </div>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between"><span className="text-slate-500 font-bold">الخصم:</span><span className="font-black text-rose-600">{offer.discountValue}{offer.discountType === 'percent' ? '%' : ' ج'}</span></div>
+                                {offer.productId && <div className="flex justify-between"><span className="text-slate-500 font-bold">المنتج:</span><span className="font-bold text-indigo-600">{products.find(p => p.id == offer.productId)?.name || offer.productId}</span></div>}
+                                {offer.category && <div className="flex justify-between"><span className="text-slate-500 font-bold">الفئة:</span><span className="font-bold text-indigo-600">{offer.category}</span></div>}
+                                {offer.startDate && <div className="flex justify-between"><span className="text-slate-500 font-bold">من:</span><span className="font-bold">{offer.startDate}</span></div>}
+                                {offer.endDate && <div className="flex justify-between"><span className="text-slate-500 font-bold">حتى:</span><span className="font-bold">{offer.endDate}</span></div>}
+                              </div>
+                              <div className="flex gap-2 mt-4">
+                                <button onClick={() => {
+                                  const updated = offers.map(o => o.id === offer.id ? { ...o, isActive: !o.isActive } : o);
+                                  setOffers(updated); syncToCloud({ offers: updated });
+                                }} className={`flex-1 py-2 rounded-xl text-xs font-black transition-colors ${offer.isActive ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>
+                                  {offer.isActive ? 'إيقاف' : 'تفعيل'}
+                                </button>
+                                <button onClick={() => { setDeleteConfig({ type: 'offer', id: offer.id }); setActiveModal('delete'); }} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                ) : currentRoute === 'playstation' ? (
+                  /* ==============================
+                     سيستيم بلايستيشن
+                     ============================== */
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Gamepad2 className="text-indigo-500 w-8 h-8"/> سيستيم بلايستيشن</h2>
+                      <button onClick={() => openModal('psDevice')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> إضافة جهاز</button>
+                    </div>
+
+                    {/* الأجهزة */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
+                      {psDevices.length === 0 ? (
+                        <div className="col-span-full text-center py-16 text-slate-400">
+                          <Gamepad2 className="w-16 h-16 mx-auto mb-4 opacity-20"/>
+                          <p className="font-bold">لا توجد أجهزة مسجلة</p>
+                        </div>
+                      ) : psDevices.map(device => {
+                        const activeSession = psSessions.find(s => s.deviceId === device.id && s.status === 'active');
+                        const durationMin = activeSession ? Math.floor((Date.now() - activeSession.startTime) / 60000) : 0;
+                        const currentCost = activeSession ? Math.ceil(durationMin / 60) * device.hourlyRate : 0;
+                        return (
+                          <div key={device.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${activeSession ? 'border-emerald-400 dark:border-emerald-600' : 'border-slate-200 dark:border-slate-700'}`}>
+                            <div className="flex justify-between items-start mb-4">
+                              <div>
+                                <h3 className="font-black text-xl text-slate-800 dark:text-white">{device.name}</h3>
+                                <p className="text-indigo-600 dark:text-indigo-400 font-bold text-sm mt-1">{device.hourlyRate} ج / ساعة</p>
+                              </div>
+                              <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${activeSession ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{activeSession ? 'شغال' : 'فاضي'}</span>
+                            </div>
+                            {activeSession && (
+                              <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 mb-4 space-y-1">
+                                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">بدأ: {activeSession.startTimeStr}</p>
+                                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">المدة: {durationMin} دقيقة</p>
+                                <p className="text-base font-black text-emerald-600">التكلفة الحالية: {currentCost} ج</p>
+                              </div>
+                            )}
+                            {activeSession ? (
+                              <button onClick={() => endPsSession(activeSession.id)} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-colors">
+                                <Power size={16}/> إنهاء الجلسة وإصدار فاتورة
+                              </button>
+                            ) : (
+                              <button onClick={() => startPsSession(device.id)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-colors">
+                                <Play size={16}/> بدء جلسة
+                              </button>
+                            )}
+                            <button onClick={() => { setDeleteConfig({ type: 'psDevice', id: device.id }); setActiveModal('delete'); }} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* سجل الجلسات */}
+                    {psSessions.filter(s => s.status === 'ended').length > 0 && (
+                      <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 dark:border-slate-700"><h3 className="font-black text-lg text-slate-800 dark:text-white">سجل الجلسات المنتهية</h3></div>
+                        <div className="overflow-x-auto custom-scrollbar">
+                          <table className="w-full text-right min-w-[600px]">
+                            <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold text-sm">
+                              <tr><th className="p-4">الجهاز</th><th className="p-4">الكاشير</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4 text-center">المدة</th><th className="p-4 text-center">التكلفة</th></tr>
+                            </thead>
+                            <tbody>
+                              {[...psSessions.filter(s => s.status === 'ended')].reverse().slice(0, 20).map(s => (
+                                <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 text-sm">
+                                  <td className="p-4 font-bold text-slate-800 dark:text-white">{s.deviceName}</td>
+                                  <td className="p-4 text-slate-500 dark:text-slate-400">{s.cashierName}</td>
+                                  <td className="p-4 text-xs text-slate-500">{s.startTimeStr}</td>
+                                  <td className="p-4 text-xs text-slate-500">{s.endTimeStr}</td>
+                                  <td className="p-4 text-center font-bold">{s.durationMin} د</td>
+                                  <td className="p-4 text-center font-black text-indigo-600">{s.cost} ج</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                ) : currentRoute === 'tables' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Utensils className="text-indigo-500 w-8 h-8"/> إدارة الصالة والطاولات</h2>
+                      <button onClick={() => openModal('table')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> طاولة جديدة</button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                      {tables.map(t => (
+                        <div key={t.id} className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200 dark:border-slate-700 flex flex-col items-center shadow-sm relative group">
+                          <Armchair className="text-slate-300 dark:text-slate-600 mb-3 w-14 h-14"/>
+                          <h3 className="font-black text-base text-slate-800 dark:text-white line-clamp-1 text-center">{t.name}</h3>
+                          <p className="text-sm font-bold text-indigo-500">{t.capacity} كراسي</p>
+                          <button onClick={() => { setDeleteConfig({ type: 'table', id: t.id }); setActiveModal('delete'); }} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-1.5 rounded-xl transition-all"><Trash2 size={13}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                ) : currentRoute === 'hr' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Users className="text-indigo-500 w-8 h-8"/> إدارة الموظفين والرواتب</h2>
+                      <button onClick={() => openModal('employee')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> إضافة موظف</button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[700px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm">
+                            <tr><th className="p-5">الاسم</th><th className="p-5">الراتب الأساسي</th><th className="p-5">سحب (سلفة)</th><th className="p-5">خصم</th><th className="p-5 text-center">الصافي</th><th className="p-5 text-center">التقرير</th><th className="p-5 text-center">حذف</th></tr>
+                          </thead>
+                          <tbody>
+                            {employees.map(emp => (
+                              <tr key={emp.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
+                                <td className="p-5 font-black text-slate-800 dark:text-white text-base">{emp.name}</td>
+                                <td className="p-5 font-bold text-slate-600 dark:text-slate-300">{emp.salary} ج</td>
+                                <td className="p-2"><SafeNumberInput value={emp.advances} onSave={(v) => genericSave('employees', employees, setEmployees, { advances: v, id: emp.id })} colorClass="text-amber-500 focus:border-amber-500 border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800"/></td>
+                                <td className="p-2"><SafeNumberInput value={emp.deductions} onSave={(v) => genericSave('employees', employees, setEmployees, { deductions: v, id: emp.id })} colorClass="text-rose-500 focus:border-rose-500 border-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800"/></td>
+                                <td className="p-5 text-center font-black text-emerald-600 dark:text-emerald-400 text-base">{emp.salary - (parseFloat(emp.advances) || 0) - (parseFloat(emp.deductions) || 0)} ج</td>
+                                <td className="p-5 text-center">
+                                  <button onClick={() => setSelectedEmployeeReport(emp)} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 mx-auto">
+                                    <User size={12}/> تفاصيل
+                                  </button>
+                                </td>
+                                <td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'employee', id: emp.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* تقرير موظف مختار */}
+                    {selectedEmployeeReport && (() => {
+                      const emp = selectedEmployeeReport;
+                      const empOrders = orders.filter(o => o.cashierName === emp.name);
+                      const empShifts = shifts.filter(s => s.cashierName === emp.name);
+                      const totalSales = empOrders.reduce((s, o) => s + o.total, 0);
+                      return (
+                        <div className="bg-white dark:bg-slate-800 rounded-3xl border border-indigo-200 dark:border-indigo-800 shadow-sm overflow-hidden">
+                          <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20">
+                            <h3 className="font-black text-lg text-indigo-800 dark:text-indigo-300 flex items-center gap-2"><User size={18}/> معاملات: {emp.name}</h3>
+                            <div className="flex gap-2">
+                              <button onClick={() => exportEmployeeReportPDF(emp, orders, currentUser.cafeName)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1 hover:bg-indigo-700 transition-colors">
+                                <Download size={13}/> PDF
+                              </button>
+                              <button onClick={() => setSelectedEmployeeReport(null)} className="p-2 bg-white dark:bg-slate-700 rounded-xl text-slate-500"><X size={16}/></button>
+                            </div>
+                          </div>
+                          <div className="p-4 grid grid-cols-3 gap-4 border-b border-slate-100 dark:border-slate-700">
+                            <div className="text-center"><p className="text-2xl font-black text-indigo-600">{totalSales.toFixed(2)} ج</p><p className="text-xs text-slate-500 font-bold">إجمالي مبيعاته</p></div>
+                            <div className="text-center"><p className="text-2xl font-black text-emerald-600">{empOrders.length}</p><p className="text-xs text-slate-500 font-bold">عدد الطلبات</p></div>
+                            <div className="text-center"><p className="text-2xl font-black text-amber-600">{empShifts.length}</p><p className="text-xs text-slate-500 font-bold">ورديات</p></div>
+                          </div>
+                          <div className="overflow-x-auto custom-scrollbar max-h-80">
+                            <table className="w-full text-right min-w-[500px]">
+                              <thead className="bg-slate-50 dark:bg-slate-800/80 sticky top-0 text-slate-500 font-bold text-xs">
+                                <tr><th className="p-3">التاريخ</th><th className="p-3">الأصناف</th><th className="p-3">النوع</th><th className="p-3 text-center">الإجمالي</th></tr>
+                              </thead>
+                              <tbody>
+                                {[...empOrders].reverse().map(o => (
+                                  <tr key={o.id} className="border-b border-slate-100 dark:border-slate-700 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                    <td className="p-3 text-slate-500">{o.date}</td>
+                                    <td className="p-3 text-slate-700 dark:text-slate-300 max-w-[200px] truncate">{(o.items||[]).map(it => it.name).join('، ')}</td>
+                                    <td className="p-3"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold">{o.note || 'تيك أواي'}</span></td>
+                                    <td className="p-3 text-center font-black text-indigo-600">{o.total.toFixed(2)} ج</td>
+                                  </tr>
+                                ))}
+                                {empOrders.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-400 font-bold">لا توجد معاملات مسجلة لهذا الموظف</td></tr>}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                ) : currentRoute === 'expenses' ? (
+                  <div className="p-4 md:p-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Receipt className="text-indigo-500 w-8 h-8"/> المصروفات اليومية</h2>
+                      <button onClick={() => openModal('expense')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17}/> تسجيل مصروف</button>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-right min-w-[500px]">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm">
+                            <tr><th className="p-5">التاريخ</th><th className="p-5">البيان</th><th className="p-5">المبلغ</th><th className="p-5 text-center">حذف</th></tr>
+                          </thead>
+                          <tbody>
+                            {expenses.map(ex => (
+                              <tr key={ex.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
+                                <td className="p-5 font-bold text-slate-500 dark:text-slate-400">{ex.date}</td>
+                                <td className="p-5 font-black text-slate-800 dark:text-white">{ex.description}</td>
+                                <td className="p-5 font-black text-rose-500 dark:text-rose-400 text-base">{ex.amount} ج</td>
+                                <td className="p-5 text-center"><button onClick={() => { setDeleteConfig({ type: 'expense', id: ex.id }); setActiveModal('delete'); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15}/></button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
               </div>
             </main>
 
-            {/* ==================== Modals ==================== */}
-            
-            {activeModal === 'material' && (
-              <CustomModal title="مادة خام جديدة" onClose={closeModal}>
-                <form onSubmit={(e) => { e.preventDefault(); genericSave('rawMaterials', rawMaterials, setRawMaterials, { name: e.target.name.value, unit: e.target.unit.value, currentStock: parseFloat(e.target.currentStock.value), costPerUnit: parseFloat(e.target.costPerUnit.value), expiryDate: e.target.expiryDate.value || null }); }} className="space-y-4">
-                  <input required name="name" placeholder="اسم المادة" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"/>
-                  <select required name="unit" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"><option value="جرام">جرام</option><option value="مللي">مللي</option><option value="قطعة">قطعة</option><option value="كيلو">كيلو</option></select>
+            {/* ==================== النوافذ المنبثقة ==================== */}
+
+            {activeModal === 'globalSettings' && (
+              <CustomModal title="إعدادات المنصة" onClose={closeModal}>
+                <form onSubmit={saveGlobalSettings} className="space-y-4">
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">اسم المنصة</label><input required name="appName" value={formData.appName || ''} onChange={handleFormChange} className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg">حفظ التغييرات</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'tenant' && (
+              <CustomModal title={formData.id && !formData.isNew ? "تعديل بيانات الكافيه" : "إضافة كافيه جديد"} onClose={closeModal}>
+                <form onSubmit={saveTenant} className="space-y-4">
+                  {formData.isNew && <div><label className="block text-sm font-black mb-2 dark:text-white">كود الكافيه (معرف فريد)</label><input required name="id" placeholder="مثال: c2" value={formData.id || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>}
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">اسم الكافيه</label><input required name="name" value={formData.name || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                  <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-black text-sm outline-none dark:text-white"/>
-                    <input required type="number" step="any" name="costPerUnit" placeholder="التكلفة (ج)" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-black text-sm outline-none dark:text-white"/>
+                    <div><label className="block text-xs font-black mb-2 dark:text-white">باسورد المدير</label><input required name="adminPassword" value={formData.adminPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
+                    <div><label className="block text-xs font-black mb-2 dark:text-white">باسورد الكاشير</label><input required name="cashierPassword" value={formData.cashierPassword || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white"/></div>
                   </div>
-                  <div><label className="text-xs font-bold text-slate-500 block mb-1">تاريخ الصلاحية (اختياري للتحذيرات)</label><input type="date" name="expiryDate" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"/></div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-lg">حفظ</button>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2">حفظ بيانات الكافيه</button>
                 </form>
               </CustomModal>
             )}
 
-            {activeModal === 'playstation' && (
+            {activeModal === 'closeShift' && activeShift && (
+              <CustomModal title="تقفيل الوردية" onClose={closeModal}>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const actualCash = parseFloat(e.target.actualCash.value) || 0;
+                  const shiftSales = orders.filter(o => o.shiftId === activeShift.id).reduce((sum, o) => sum + o.total, 0);
+                  const updatedShifts = shifts.map(s => s.id === activeShift.id ? { ...s, endTime: new Date().toLocaleString('ar-EG'), actualCash, totalSales: shiftSales, status: 'closed' } : s);
+                  setShifts(updatedShifts); syncToCloud({ shifts: updatedShifts });
+                  closeModal(); setCurrentUser(null);
+                }}>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/30 p-5 rounded-2xl mb-6 border border-indigo-100 dark:border-indigo-800">
+                    <p className="text-sm font-bold text-indigo-800 dark:text-indigo-300 flex justify-between mb-3"><span>العهدة عند الاستلام:</span><span>{activeShift.startingCash} ج</span></p>
+                    <p className="text-sm font-black text-indigo-800 dark:text-indigo-300 flex justify-between border-t border-indigo-200 dark:border-indigo-700 pt-3"><span>مبيعات الشيفت:</span><span>{orders.filter(o => o.shiftId === activeShift.id).reduce((sum, o) => sum + o.total, 0).toFixed(2)} ج</span></p>
+                  </div>
+                  <div className="text-right mb-7">
+                    <label className="block text-sm font-black mb-3 dark:text-white">كم المبلغ الفعلي في الدرج الآن؟</label>
+                    <input required name="actualCash" type="number" min="0" step="any" placeholder="المبلغ الصافي" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-center font-black text-2xl focus:border-rose-500 outline-none text-slate-800 dark:text-white"/>
+                  </div>
+                  <button type="submit" className="w-full bg-rose-600 hover:bg-rose-700 text-white py-4 rounded-2xl font-black shadow-lg text-lg transition-colors">تأكيد التقفيل والخروج</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'product' && (
+              <CustomModal title="إضافة صنف للقائمة" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, setProducts, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: e.target.image.value || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
+                  <input required name="pname" value={formData.pname || formData.name || ''} onChange={e => setFormData({...formData, pname: e.target.value, name: e.target.value})} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/>
+                    <input required type="number" step="any" name="price" value={formData.price || ''} onChange={handleFormChange} placeholder="السعر (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-black text-indigo-600 dark:text-indigo-400 text-sm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black mb-1.5 text-slate-600 dark:text-slate-400 flex items-center gap-1"><Calendar size={12}/> تاريخ انتهاء الصلاحية (اختياري)</label>
+                    <input type="date" name="expiryDate" value={formData.expiryDate || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/>
+                  </div>
+                  <div className="relative"><ImageIcon className="absolute left-4 top-4 text-slate-400 w-4 h-4"/><input name="image" value={formData.image || ''} onChange={handleFormChange} placeholder="رابط صورة المنتج (اختياري)" className="w-full p-4 pl-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-left text-slate-800 dark:text-white text-xs" dir="ltr"/></div>
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                    <div className="flex justify-between items-center mb-4"><label className="text-sm font-black dark:text-white">مقادير الوصفة</label><button type="button" onClick={() => setFormData({ ...formData, recipe: [...(formData.recipe || []), { materialId: '', amount: '' }] })} className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded-lg font-bold">إضافة مكون</button></div>
+                    <div className="space-y-2 max-h-40 overflow-auto custom-scrollbar">
+                      {(formData.recipe || []).map((item, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <select required value={item.materialId} onChange={e => { const r = [...formData.recipe]; r[idx].materialId = e.target.value; setFormData({ ...formData, recipe: r }); }} className="flex-1 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none"><option value="" disabled>اختر مادة</option>{rawMaterials.map(rm => <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>)}</select>
+                          <input required type="number" step="any" value={item.amount} onChange={e => { const r = [...formData.recipe]; r[idx].amount = parseFloat(e.target.value); setFormData({ ...formData, recipe: r }); }} placeholder="الكمية" className="w-24 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-center font-bold bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none"/>
+                          <button type="button" onClick={() => { const r = [...formData.recipe]; r.splice(idx, 1); setFormData({ ...formData, recipe: r }); }} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 p-2.5 rounded-xl transition-colors"><Trash2 size={15}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black mt-2 shadow-lg text-lg transition-colors">حفظ المنتج</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'offer' && (
+              <CustomModal title="إضافة عرض جديد" onClose={closeModal}>
+                <form onSubmit={saveOffer} className="space-y-4">
+                  <input required name="offerName" value={formData.offerName || ''} onChange={handleFormChange} placeholder="اسم العرض" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-black mb-1.5 dark:text-slate-300">نوع الخصم</label>
+                      <select name="offerDiscountType" value={formData.offerDiscountType || 'percent'} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm">
+                        <option value="percent">نسبة مئوية %</option>
+                        <option value="fixed">مبلغ ثابت ج</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-black mb-1.5 dark:text-slate-300">قيمة الخصم</label>
+                      <input required type="number" step="any" min="0" name="offerDiscountValue" value={formData.offerDiscountValue || ''} onChange={handleFormChange} placeholder={formData.offerDiscountType === 'fixed' ? 'ج' : '%'} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-black text-rose-600 dark:text-rose-400 text-sm"/>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black mb-1.5 dark:text-slate-300">تطبيق على منتج محدد (اختياري)</label>
+                    <select name="offerProductId" value={formData.offerProductId || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm">
+                      <option value="">كل المنتجات</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black mb-1.5 dark:text-slate-300">أو تطبيق على فئة (اختياري)</label>
+                    <select name="offerCategory" value={formData.offerCategory || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm">
+                      <option value="">كل الفئات</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-black mb-1.5 dark:text-slate-300">تاريخ البداية</label><input type="date" name="offerStartDate" value={formData.offerStartDate || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/></div>
+                    <div><label className="block text-xs font-black mb-1.5 dark:text-slate-300">تاريخ النهاية</label><input type="date" name="offerEndDate" value={formData.offerEndDate || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm"/></div>
+                  </div>
+                  <button type="submit" className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black text-lg transition-colors shadow-lg">حفظ العرض</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'psDevice' && (
               <CustomModal title="إضافة جهاز بلايستيشن" onClose={closeModal}>
-                <form onSubmit={(e) => { e.preventDefault(); genericSave('playstations', playstations, setPlaystations, { name: e.target.name.value, type: e.target.type.value, hourlyRate: parseFloat(e.target.hourlyRate.value), status: 'idle', startTime: null }); }} className="space-y-4">
-                  <input required name="name" placeholder="اسم/رقم الجهاز (مثال: شاشة 1)" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"/>
-                  <select required name="type" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"><option value="PS4">PlayStation 4</option><option value="PS5">PlayStation 5</option></select>
-                  <input required type="number" step="any" name="hourlyRate" placeholder="سعر الساعة (ج.م)" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-black text-sm outline-none dark:text-white"/>
-                  <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-lg">إضافة الجهاز</button>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('psDevices', psDevices, setPsDevices, { name: e.target.psName.value, hourlyRate: parseFloat(e.target.hourlyRate.value) || 0 }); }} className="space-y-4">
+                  <input required name="psName" placeholder="اسم الجهاز (مثال: PS5 رقم 1)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <input required type="number" step="any" name="hourlyRate" placeholder="سعر الساعة (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-indigo-600 dark:text-indigo-400 text-sm outline-none focus:border-indigo-500"/>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ الجهاز</button>
                 </form>
               </CustomModal>
             )}
 
-             {activeModal === 'offer' && (
-              <CustomModal title="إضافة عرض/خصم" onClose={closeModal}>
-                <form onSubmit={(e) => { e.preventDefault(); genericSave('offers', offers, setOffers, { name: e.target.name.value, type: e.target.type.value, value: parseFloat(e.target.value.value) }); }} className="space-y-4">
-                  <input required name="name" placeholder="اسم العرض (مثال: خصم طلاب 10%)" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"/>
-                  <select required name="type" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-bold text-sm outline-none dark:text-white"><option value="percent">نسبة مئوية %</option><option value="fixed">خصم مبلغ ثابت ج.م</option></select>
-                  <input required type="number" step="any" name="value" placeholder="القيمة" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl font-black text-sm outline-none dark:text-white"/>
-                  <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-lg">إضافة العرض</button>
+            {activeModal === 'material' && (
+              <CustomModal title="مادة خام للمخزن" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('rawMaterials', rawMaterials, setRawMaterials, { name: e.target.name.value, unit: e.target.unit.value, currentStock: parseFloat(e.target.currentStock.value), costPerUnit: parseFloat(e.target.costPerUnit.value) }); }} className="space-y-4">
+                  <input required name="name" placeholder="اسم المادة" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <select required name="unit" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"><option value="جرام">جرام</option><option value="مللي">مللي</option><option value="قطعة">قطعة</option><option value="كيلو">كيلو</option></select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                    <input required type="number" step="any" name="costPerUnit" placeholder="التكلفة للوحدة (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-sm outline-none focus:border-indigo-500"/>
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ المادة</button>
                 </form>
               </CustomModal>
             )}
 
-            {/* إيصال الفاتورة (Receipt) */}
-            {lastOrder && (
-              <CustomModal title="الفاتورة" onClose={() => setLastOrder(null)}>
-                <div className="print-area p-6 bg-white text-black font-mono border border-slate-300 rounded-xl mx-auto max-w-xs text-center">
-                  <h2 className="text-xl font-black mb-1">{currentUser.cafeName}</h2>
-                  <p className="text-[10px] font-bold mb-3 border-b pb-2">{lastOrder.date}</p>
-                  <div className="space-y-1.5 mb-3 text-right text-xs font-bold">
-                    {lastOrder.items.map((i, idx) => <div key={idx} className="flex justify-between"><span>{i.quantity}x {i.name}</span><span>{i.price*i.quantity}</span></div>)}
-                  </div>
-                  <div className="border-t border-dashed pt-2 space-y-1 text-xs font-bold text-right">
-                    <div className="flex justify-between"><span>المجموع:</span><span>{lastOrder.subtotal?.toFixed(2)}</span></div>
-                    {lastOrder.discountAmount > 0 && <div className="flex justify-between text-emerald-600"><span>خصم ({lastOrder.offerName}):</span><span>- {lastOrder.discountAmount?.toFixed(2)}</span></div>}
-                  </div>
-                  <div className="flex justify-between font-black text-lg border-t-2 border-black pt-2 mt-2"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)} ج</span></div>
-                  <p className="text-[9px] mt-6 font-bold text-slate-500">كاشير: {lastOrder.cashierName}</p>
-                </div>
-                <button onClick={() => window.print()} className="w-full mt-4 bg-indigo-600 text-white py-3 rounded-xl font-black flex justify-center gap-2 items-center no-print"><Printer size={16}/> طباعة الفاتورة</button>
+            {activeModal === 'employee' && (
+              <CustomModal title="ملف موظف جديد" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('employees', employees, setEmployees, { name: e.target.empName.value, salary: parseFloat(e.target.salary.value), advances: 0, deductions: 0 }); }} className="space-y-4">
+                  <input required name="empName" placeholder="الاسم الكامل" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <input required type="number" step="any" name="salary" placeholder="الراتب الأساسي الشهري" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-emerald-600 dark:text-emerald-400 text-sm outline-none focus:border-indigo-500"/>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ الموظف</button>
+                </form>
               </CustomModal>
             )}
 
-             {activeModal === 'delete' && (
+            {activeModal === 'table' && (
+              <CustomModal title="تسجيل طاولة بالصالة" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('tables', tables, setTables, { name: e.target.tableName.value, capacity: parseInt(e.target.capacity.value) }); }} className="space-y-4">
+                  <input required name="tableName" placeholder="مثال: طاولة 5، أو VIP" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <input required type="number" name="capacity" placeholder="عدد الكراسي" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ الطاولة</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'expense' && (
+              <CustomModal title="سند مصروف نثري" onClose={closeModal}>
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('expenses', expenses, setExpenses, { description: e.target.description.value, amount: parseFloat(e.target.amount.value), date: new Date().toISOString().split('T')[0] }); }} className="space-y-4">
+                  <input required name="description" placeholder="فيم تم صرف المبلغ؟" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500"/>
+                  <input required type="number" step="any" name="amount" placeholder="المبلغ (ج.م)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-sm outline-none focus:border-indigo-500"/>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">سجل المصروف</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {activeModal === 'delete' && (
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl">
-                  <AlertCircle className="w-16 h-16 text-rose-500 mx-auto mb-4"/>
-                  <h3 className="text-xl font-black mb-2 dark:text-white">هل أنت متأكد من الحذف؟</h3>
-                  <div className="flex gap-3 mt-6">
-                    <button onClick={confirmDelete} className="flex-1 bg-rose-600 text-white py-3 rounded-xl font-black">نعم، احذف</button>
-                    <button onClick={closeModal} className="flex-1 bg-slate-200 text-slate-800 py-3 rounded-xl font-black">إلغاء</button>
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-rose-100 dark:border-rose-900">
+                  <AlertCircle className="w-20 h-20 text-rose-500 mx-auto mb-4"/>
+                  <h3 className="text-2xl font-black mb-2 dark:text-white">هل أنت متأكد؟</h3>
+                  <p className="text-slate-500 dark:text-slate-400 font-bold mb-8 text-sm">سيتم الحذف نهائياً ولن يمكنك التراجع.</p>
+                  <div className="flex gap-3">
+                    <button onClick={confirmDelete} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-3.5 rounded-xl font-black transition-colors">نعم، احذف</button>
+                    <button onClick={closeModal} className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white py-3.5 rounded-xl font-black transition-colors">إلغاء</button>
                   </div>
                 </div>
               </div>
+            )}
+
+            {lastOrder && (
+              <CustomModal title="إيصال الدفع" onClose={() => setLastOrder(null)}>
+                <div className="print-section p-8 bg-white text-black text-center font-mono border-2 border-dashed border-slate-300 rounded-2xl mx-auto max-w-xs">
+                  <Coffee className="mx-auto mb-3 text-slate-800 w-10 h-10"/>
+                  <h2 className="text-2xl font-black mb-1">{currentUser.cafeName}</h2>
+                  <p className="text-xs font-bold mb-4 text-slate-500">إيصال رقم: {lastOrder.id.toString().slice(-5)}</p>
+                  <p className="text-[11px] font-bold border-y-2 border-dashed border-slate-300 py-2 mb-4">{lastOrder.date}</p>
+                  <div className="space-y-2 mb-5 text-right px-2">{lastOrder.items.map((i, idx) => <div key={idx} className="flex justify-between text-sm font-bold"><span>{i.quantity}x {i.name}</span><span>{(i.price * i.quantity).toFixed(2)}</span></div>)}</div>
+                  <div className="border-t border-dashed border-slate-300 pt-3 space-y-1.5 mb-3">
+                    <div className="flex justify-between text-sm font-bold text-slate-600"><span>المجموع:</span><span>{lastOrder.subtotal?.toFixed(2)}</span></div>
+                    {lastOrder.discountAmount > 0 && <div className="flex justify-between text-sm font-black text-emerald-600"><span>خصم {lastOrder.discountType === 'percent' ? `${lastOrder.discountValue}%` : 'ثابت'}:</span><span>- {lastOrder.discountAmount?.toFixed(2)}</span></div>}
+                    {lastOrder.tax > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>ضريبة (14%):</span><span>{lastOrder.tax?.toFixed(2)}</span></div>}
+                  </div>
+                  <div className="flex justify-between font-black text-2xl border-t-2 border-slate-800 pt-4 mt-2"><span>الإجمالي:</span><span>{lastOrder.total.toFixed(2)}</span></div>
+                  <p className="text-[10px] mt-8 text-slate-500 font-bold">الكاشير: {currentUser.name}</p>
+                </div>
+                <button onClick={() => window.print()} className="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 no-print shadow-lg text-lg transition-colors"><Printer size={18}/> طباعة الإيصال</button>
+              </CustomModal>
             )}
 
           </div>

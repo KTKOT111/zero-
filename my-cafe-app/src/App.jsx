@@ -20,7 +20,7 @@ const OWNER_EMAIL = 'owner@coffeeerp.app';
 const STOCK_ALERT_THRESHOLD = 50;
 const TAX_RATE = 0.14;
 
-// تم مسح المنتجات الافتراضية ليبدأ النظام فارغاً
+// بداية نظيفة بدون منتجات افتراضية
 const defaultProducts = [];
 
 // ========== Reducer ==========
@@ -438,7 +438,7 @@ export default function App() {
     setState({ formData: { ...stateRef.current.formData, [e.target.name]: e.target.value } });
   }, [setState]);
 
-  // كود رفع وضغط الصور قبل الحفظ
+  // كود رفع وضغط الصور قبل الحفظ لتسريع قاعدة البيانات
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -542,7 +542,7 @@ export default function App() {
     });
   }, [offers, genericSave]);
 
-  // ========== PlayStation Logic ==========
+  // ========== PlayStation Logic (تعديل الحساب بالربع ساعة) ==========
   const startPsSession = useCallback((deviceId) => {
     const device = psDevices.find(d => d.id === deviceId);
     if (!device) return;
@@ -569,7 +569,8 @@ export default function App() {
     
     // حساب الدقائق الفعلية
     const durationMinActual = Math.ceil((Date.now() - session.startTime) / 60000);
-    // التقريب لأقرب ربع ساعة (15 دقيقة) للحساب المالي
+    
+    // التقريب لأقرب ربع ساعة (15 دقيقة) للحساب المالي (لو 14 دقيقة تتحسب 15، لو 40 تتحسب 45)
     const roundedMin = Math.ceil(durationMinActual / 15) * 15;
     const cost = (roundedMin / 60) * (device.hourlyRate || 0);
 
@@ -603,7 +604,6 @@ export default function App() {
     syncToCloud(updates);
     showToast(`تم إنهاء الجلسة بتكلفة ${cost.toFixed(2)} ج`, 'success');
   }, [psSessions, psDevices, orders, activeShift, currentUser, setField, syncToCloud, showToast]);
-
   // ========== POS Logic ==========
   const processOrder = useCallback(() => {
     if (cart.length === 0) { showToast('السلة فارغة', 'error'); return; }
@@ -725,7 +725,6 @@ export default function App() {
     );
   }
 
-  // Email link auth route
   if (location.pathname === '/auth/email-link') {
     return (
       <ErrorBoundary>
@@ -733,20 +732,6 @@ export default function App() {
       </ErrorBoundary>
     );
   }
-
-  // تحديد القوائم الجانبية المسموحة حسب الرتبة
-  const navItems = [
-    { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة', roles: ['admin'] },
-    { id: 'reports', icon: <FileText size={19} />, label: 'التقارير', roles: ['admin'] },
-    { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
-    { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
-    { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
-    { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin'] },
-    { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
-    { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] },
-    { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
-    { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
-  ].filter(item => item.roles.includes(currentUser?.role));
 
   // ========== MAIN RETURN ==========
   return (
@@ -789,6 +774,7 @@ export default function App() {
         {!currentUser ? (
           /* ===== Login Screen ===== */
           <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans relative overflow-hidden p-4 pt-10">
+            {/* ... Login UI ... */}
             <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
 
@@ -890,19 +876,13 @@ export default function App() {
                   )}
                 </div>
               )}
-
-              <div className="mt-5 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700">
-                <p className="text-xs font-black text-slate-500 dark:text-slate-400 mb-2">📧 صيغة الإيميلات:</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">مدير: <span className="text-indigo-500" dir="ltr">admin.c1@coffeeerp.app</span></p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">كاشير: <span className="text-indigo-500" dir="ltr">cashier.c1@coffeeerp.app</span></p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">مالك المنصة: <span className="text-indigo-500" dir="ltr">owner@coffeeerp.app</span></p>
-              </div>
             </div>
           </div>
 
         ) : currentUser.role === 'customer' ? (
           /* ===== Digital Menu (Customer) ===== */
           <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-y-auto custom-scrollbar pb-10 pt-7">
+            {/* ... Customer Menu UI ... */}
             <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
               <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee /> منيو {globalSettings.appName || 'الكافيه'}</h1>
               <div className="flex items-center gap-3">
@@ -954,7 +934,7 @@ export default function App() {
           /* ===== Employee / Admin Main Interface ===== */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden w-full pt-7">
 
-            {/* Sidebar for Admin and Cashier */}
+            {/* Sidebar for Admin and Cashier (التركات كلها هنا في إتاحة الشاشات) */}
             {(currentUser.role === 'admin' || currentUser.role === 'cashier') && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileMenuOpen', false)} />}
@@ -967,7 +947,18 @@ export default function App() {
                     <button onClick={() => setField('isMobileMenuOpen', false)} className="lg:hidden text-slate-500 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18} /></button>
                   </div>
                   <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-                    {navItems.map(item => (
+                    {[
+                      { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة', roles: ['admin'] },
+                      { id: 'reports', icon: <FileText size={19} />, label: 'التقارير', roles: ['admin'] },
+                      { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
+                      { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
+                      { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
+                      { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin', 'cashier'] }, // متاح للكاشير
+                      { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
+                      { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] }, // متاح للكاشير
+                      { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
+                      { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
+                    ].filter(item => item.roles.includes(currentUser?.role)).map(item => (
                       <button key={item.id} onClick={() => { setField('currentRoute', item.id); setField('isMobileMenuOpen', false); }}
                         className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold transition-all text-sm ${currentRoute === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-white'}`}>
                         {item.icon} {item.label}
@@ -1054,6 +1045,10 @@ export default function App() {
                   </div>
 
                 ) : currentUser.role === 'super_admin' ? (
+                  /* ===== Super Admin Dashboard ===== */
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
+                    {/* ... SaaS UI ... */}
+                    ) : currentUser.role === 'super_admin' ? (
                   /* ===== Super Admin Dashboard ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -1400,46 +1395,55 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'offers' && currentUser.role === 'admin' ? (
-                  /* ===== Offers ===== */
+                ) : currentRoute === 'offers' && (currentUser.role === 'admin' || currentUser.role === 'cashier') ? (
+                  /* ===== Offers ===== (يتم عرضها للـ admin والكاشير ولكن الكاشير لا يرى أزرار التعديل) */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Tag className="text-indigo-500 w-8 h-8" /> العروض والخصومات</h2>
-                      <button onClick={() => openModal('offer')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> عرض جديد</button>
+                      {currentUser.role === 'admin' && (
+                        <button onClick={() => openModal('offer')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> عرض جديد</button>
+                      )}
                     </div>
-                    {offers.length === 0 ? (
-                      <div className="text-center py-20 text-slate-400"><Gift className="w-20 h-20 mx-auto mb-4 opacity-20" /><p className="font-bold text-lg">لا توجد عروض</p></div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {offers.map(offer => {
-                          const today = new Date();
-                          const isAct = offer.isActive && (!offer.endDate || new Date(offer.endDate) >= today) && (!offer.startDate || new Date(offer.startDate) <= today);
-                          return (
-                            <div key={offer.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${isAct ? 'border-emerald-300 dark:border-emerald-700' : 'border-slate-200 dark:border-slate-700 opacity-60'}`}>
-                              <div className="flex justify-between items-start mb-3"><h3 className="font-black text-lg text-slate-800 dark:text-white">{offer.name}</h3><span className={`px-3 py-1 rounded-xl text-xs font-black ${isAct ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{isAct ? 'مفعّل' : 'منتهي'}</span></div>
-                              <div className="space-y-2 text-sm">
-                                <div className="flex justify-between"><span className="text-slate-500 font-bold">الخصم:</span><span className="font-black text-rose-600">{offer.discountValue}{offer.discountType === 'percent' ? '%' : ' ج'}</span></div>
-                                {offer.productId && <div className="flex justify-between"><span className="text-slate-500 font-bold">المنتج:</span><span className="font-bold text-indigo-600">{products.find(p => p.id == offer.productId)?.name}</span></div>}
-                                {offer.category && <div className="flex justify-between"><span className="text-slate-500 font-bold">الفئة:</span><span className="font-bold text-indigo-600">{offer.category}</span></div>}
-                                {offer.endDate && <div className="flex justify-between"><span className="text-slate-500 font-bold">حتى:</span><span className="font-bold">{offer.endDate}</span></div>}
+                    {/* الكاشير بيشوف العروض الفعالة بس، المدير بيشوف كله */}
+                    {(() => {
+                      const visibleOffers = currentUser.role === 'admin' ? offers : offers.filter(o => o.isActive);
+                      if (visibleOffers.length === 0) {
+                        return <div className="text-center py-20 text-slate-400"><Gift className="w-20 h-20 mx-auto mb-4 opacity-20" /><p className="font-bold text-lg">لا توجد عروض فعالة</p></div>;
+                      }
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                          {visibleOffers.map(offer => {
+                            const today = new Date();
+                            const isAct = offer.isActive && (!offer.endDate || new Date(offer.endDate) >= today) && (!offer.startDate || new Date(offer.startDate) <= today);
+                            return (
+                              <div key={offer.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${isAct ? 'border-emerald-300 dark:border-emerald-700' : 'border-slate-200 dark:border-slate-700 opacity-60'}`}>
+                                <div className="flex justify-between items-start mb-3"><h3 className="font-black text-lg text-slate-800 dark:text-white">{offer.name}</h3><span className={`px-3 py-1 rounded-xl text-xs font-black ${isAct ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{isAct ? 'مفعّل' : 'منتهي'}</span></div>
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between"><span className="text-slate-500 font-bold">الخصم:</span><span className="font-black text-rose-600">{offer.discountValue}{offer.discountType === 'percent' ? '%' : ' ج'}</span></div>
+                                  {offer.productId && <div className="flex justify-between"><span className="text-slate-500 font-bold">المنتج:</span><span className="font-bold text-indigo-600">{products.find(p => p.id == offer.productId)?.name}</span></div>}
+                                  {offer.category && <div className="flex justify-between"><span className="text-slate-500 font-bold">الفئة:</span><span className="font-bold text-indigo-600">{offer.category}</span></div>}
+                                  {offer.endDate && <div className="flex justify-between"><span className="text-slate-500 font-bold">حتى:</span><span className="font-bold">{offer.endDate}</span></div>}
+                                </div>
+                                {/* أزرار التحكم تظهر للمدير فقط */}
+                                {currentUser.role === 'admin' && (
+                                  <div className="flex gap-2 mt-4">
+                                    <button onClick={() => { const newOffers = offers.map(o => o.id === offer.id ? { ...o, isActive: !o.isActive } : o); setField('offers', newOffers); syncToCloud({ offers: newOffers }); }} className={`flex-1 py-2 rounded-xl text-xs font-black transition-colors ${offer.isActive ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{offer.isActive ? 'إيقاف' : 'تفعيل'}</button>
+                                    <button onClick={() => setState({ deleteConfig: { type: 'offer', id: offer.id }, activeModal: 'delete' })} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 rounded-xl"><Trash2 size={14} /></button>
+                                  </div>
+                                )}
                               </div>
-                              <div className="flex gap-2 mt-4">
-                                <button onClick={() => { const newOffers = offers.map(o => o.id === offer.id ? { ...o, isActive: !o.isActive } : o); setField('offers', newOffers); syncToCloud({ offers: newOffers }); }} className={`flex-1 py-2 rounded-xl text-xs font-black transition-colors ${offer.isActive ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{offer.isActive ? 'إيقاف' : 'تفعيل'}</button>
-                                <button onClick={() => setState({ deleteConfig: { type: 'offer', id: offer.id }, activeModal: 'delete' })} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 rounded-xl"><Trash2 size={14} /></button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                ) : currentRoute === 'playstation' ? (
-                  /* ===== PlayStation ===== */
+                ) : currentRoute === 'playstation' && (currentUser.role === 'admin' || currentUser.role === 'cashier') ? (
+                  /* ===== PlayStation ===== (متاحة للكاشير والمدير مع حماية الأزرار) */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Gamepad2 className="text-indigo-500 w-8 h-8" /> بلايستيشن</h2>
-                      {/* الزرار ده هيظهر للمدير فقط */}
                       {currentUser.role === 'admin' && (
                         <button onClick={() => openModal('psDevice')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> إضافة جهاز</button>
                       )}
@@ -1449,8 +1453,10 @@ export default function App() {
                         <div className="col-span-full text-center py-16 text-slate-400"><Gamepad2 className="w-16 h-16 mx-auto mb-4 opacity-20" /><p className="font-bold">لا توجد أجهزة مضافة</p></div>
                       ) : psDevices.map(device => {
                         const aS = psSessions.find(s => s.deviceId === device.id && s.status === 'active');
+                        // حساب التقريب لحظياً للعرض فقط
                         const durMin = aS ? Math.floor((Date.now() - aS.startTime) / 60000) : 0;
-                        const cost = aS ? (Math.ceil(durMin / 15) * 15 / 60) * device.hourlyRate : 0; // حسبة العرض المباشر (15 دقيقة تقريب)
+                        const cost = aS ? (Math.ceil(durMin / 15) * 15 / 60) * device.hourlyRate : 0;
+                        
                         return (
                           <div key={device.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${aS ? 'border-emerald-400 dark:border-emerald-600' : 'border-slate-200 dark:border-slate-700'}`}>
                             <div className="flex justify-between items-start mb-4"><div><h3 className="font-black text-xl text-slate-800 dark:text-white">{device.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold text-sm mt-1">{device.hourlyRate} ج / ساعة</p></div><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${aS ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{aS ? 'شغال' : 'فاضي'}</span></div>
@@ -1658,7 +1664,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* تم تغيير مودال المنتجات لرفع الصورة من الجهاز */}
             {activeModal === 'product' && (
               <CustomModal title="إضافة صنف" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: formData.image || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">

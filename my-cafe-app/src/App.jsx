@@ -45,8 +45,7 @@ const initialState = {
   loginPassword: '',
   loginError: '',
   isLoggingIn: false,
-  // Email Link states
-  loginMethod: 'password', // 'password' or 'emailLink'
+  loginMethod: 'password',
   emailLinkSent: false,
   emailLinkEmail: '',
   emailLinkLoading: false,
@@ -138,13 +137,11 @@ export default function App() {
     toast[type](message, { duration: 3000, position: 'top-center' });
   }, []);
 
-  // Dark mode effect
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
 
-  // Online/Offline detection
   useEffect(() => {
     setField('isOnline', navigator.onLine);
     const handleOnline = () => setField('isOnline', true);
@@ -157,7 +154,6 @@ export default function App() {
     };
   }, [setField]);
 
-  // Firebase Auth init (anonymous for platform data)
   useEffect(() => {
     if (!auth || !db) {
       setField('isDataLoaded', true);
@@ -183,7 +179,6 @@ export default function App() {
     };
   }, [setField]);
 
-  // Platform config subscription
   useEffect(() => {
     if (!fbUser || !db) return;
     const platformRef = doc(db, 'coffee_erp_platform', 'config');
@@ -203,7 +198,6 @@ export default function App() {
     return () => unsub();
   }, [fbUser, setField, setState]);
 
-  // Cafe data subscription
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.cafeId) return;
     dispatch({ type: 'RESET_CAFE_DATA' });
@@ -234,7 +228,6 @@ export default function App() {
     return () => unsub();
   }, [fbUser, currentUser?.cafeId, setField, setState, showToast]);
 
-  // Sync functions
   const syncPlatformToCloud = useCallback(async (newData) => {
     if (!db || !fbUserRef.current) return;
     try {
@@ -270,7 +263,6 @@ export default function App() {
   }, [setField, showToast]);
 
   // ========== Authentication Handlers ==========
-
   const processUserRole = useCallback(async (user) => {
     const email = user.email?.toLowerCase();
     if (email === OWNER_EMAIL) {
@@ -354,29 +346,20 @@ export default function App() {
     }
     setField('emailLinkLoading', true);
     setField('emailLinkError', '');
-
     const actionCodeSettings = {
       url: `${window.location.origin}/auth/email-link`,
       handleCodeInApp: true,
     };
-
     try {
       await sendSignInLinkToEmail(auth, email, actionCodeSettings);
       window.localStorage.setItem('emailForSignIn', email);
-      setState({
-        emailLinkSent: true,
-        emailLinkEmail: email,
-        emailLinkLoading: false
-      });
+      setState({ emailLinkSent: true, emailLinkEmail: email, emailLinkLoading: false });
       showToast('تم إرسال رابط الدخول إلى بريدك الإلكتروني', 'success');
     } catch (error) {
       console.error('Email Link Error:', error);
       let errorMsg = 'فشل إرسال الرابط. حاول مرة أخرى.';
-      if (error.code === 'auth/invalid-email') {
-        errorMsg = 'بريد إلكتروني غير صالح';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMsg = 'طلبات كثيرة جداً. انتظر قليلاً.';
-      }
+      if (error.code === 'auth/invalid-email') errorMsg = 'بريد إلكتروني غير صالح';
+      else if (error.code === 'auth/too-many-requests') errorMsg = 'طلبات كثيرة جداً. انتظر قليلاً.';
       setField('emailLinkError', errorMsg);
       setField('emailLinkLoading', false);
       showToast(errorMsg, 'error');
@@ -403,15 +386,14 @@ export default function App() {
     });
     showToast('تم تسجيل الخروج', 'success');
   }, [setState, showToast]);
+
   // ========== Helper Functions & Computed Values ==========
   const categories = useMemo(() => {
     return Array.from(new Set(products.map(p => p.category).filter(Boolean)))
       .map(c => ({ id: c, name: c }));
   }, [products]);
 
-  const lowStockItems = useMemo(() => {
-    return rawMaterials.filter(rm => rm.currentStock <= STOCK_ALERT_THRESHOLD);
-  }, [rawMaterials]);
+  const lowStockItems = useMemo(() => rawMaterials.filter(rm => rm.currentStock <= STOCK_ALERT_THRESHOLD), [rawMaterials]);
 
   const expiredProducts = useMemo(() => {
     const today = new Date();
@@ -442,9 +424,7 @@ export default function App() {
       return true;
     });
     if (!validOffer) return product.price;
-    if (validOffer.discountType === 'percent') {
-      return Math.max(0, product.price * (1 - validOffer.discountValue / 100));
-    }
+    if (validOffer.discountType === 'percent') return Math.max(0, product.price * (1 - validOffer.discountValue / 100));
     return Math.max(0, product.price - validOffer.discountValue);
   }, [offers]);
 
@@ -468,32 +448,25 @@ export default function App() {
     let updates = {};
     if (type === 'material') {
       const newArr = rawMaterials.filter(rm => rm.id !== id);
-      setField('rawMaterials', newArr);
-      updates.rawMaterials = newArr;
+      setField('rawMaterials', newArr); updates.rawMaterials = newArr;
     } else if (type === 'product') {
       const newArr = products.filter(p => p.id !== id);
-      setField('products', newArr);
-      updates.products = newArr;
+      setField('products', newArr); updates.products = newArr;
     } else if (type === 'employee') {
       const newArr = employees.filter(e => e.id !== id);
-      setField('employees', newArr);
-      updates.employees = newArr;
+      setField('employees', newArr); updates.employees = newArr;
     } else if (type === 'table') {
       const newArr = tables.filter(t => t.id !== id);
-      setField('tables', newArr);
-      updates.tables = newArr;
+      setField('tables', newArr); updates.tables = newArr;
     } else if (type === 'expense') {
       const newArr = expenses.filter(ex => ex.id !== id);
-      setField('expenses', newArr);
-      updates.expenses = newArr;
+      setField('expenses', newArr); updates.expenses = newArr;
     } else if (type === 'offer') {
       const newArr = offers.filter(o => o.id !== id);
-      setField('offers', newArr);
-      updates.offers = newArr;
+      setField('offers', newArr); updates.offers = newArr;
     } else if (type === 'psDevice') {
       const newArr = psDevices.filter(d => d.id !== id);
-      setField('psDevices', newArr);
-      updates.psDevices = newArr;
+      setField('psDevices', newArr); updates.psDevices = newArr;
     }
     syncToCloud(updates);
     closeModal();
@@ -508,15 +481,7 @@ export default function App() {
       const newId = `${collectionKey}_${Date.now()}`;
       newArr = [...arr, { ...formData, ...extra, id: newId }];
     }
-    const stateMapping = {
-      rawMaterials: 'rawMaterials',
-      products: 'products',
-      employees: 'employees',
-      tables: 'tables',
-      expenses: 'expenses',
-      offers: 'offers',
-      psDevices: 'psDevices'
-    };
+    const stateMapping = { rawMaterials: 'rawMaterials', products: 'products', employees: 'employees', tables: 'tables', expenses: 'expenses', offers: 'offers', psDevices: 'psDevices' };
     setField(stateMapping[collectionKey], newArr);
     syncToCloud({ [collectionKey]: newArr });
     closeModal();
@@ -526,10 +491,7 @@ export default function App() {
   const saveTenant = useCallback((e) => {
     e.preventDefault();
     if (formData.isNew) {
-      if (tenants.find(t => t.id === formData.id)) {
-        showToast('كود الكافيه موجود بالفعل!', 'error');
-        return;
-      }
+      if (tenants.find(t => t.id === formData.id)) { showToast('كود الكافيه موجود بالفعل!', 'error'); return; }
       const newTenant = { ...formData, status: 'active' };
       delete newTenant.isNew;
       const newTenants = [...tenants, newTenant];
@@ -584,14 +546,7 @@ export default function App() {
     if (!device) return;
     const durationMin = Math.ceil((Date.now() - session.startTime) / 60000);
     const cost = Math.ceil(durationMin / 60) * (device.hourlyRate || 0);
-    const endedSession = {
-      ...session,
-      endTime: Date.now(),
-      endTimeStr: new Date().toLocaleString('ar-EG'),
-      durationMin,
-      cost,
-      status: 'ended'
-    };
+    const endedSession = { ...session, endTime: Date.now(), endTimeStr: new Date().toLocaleString('ar-EG'), durationMin, cost, status: 'ended' };
     const newSessions = psSessions.map(s => s.id === sessionId ? endedSession : s);
     setField('psSessions', newSessions);
     let updates = { psSessions: newSessions };
@@ -599,15 +554,10 @@ export default function App() {
       const psOrder = {
         id: Date.now(),
         items: [{ id: 'ps_device', name: `${device.name} - ${durationMin} دقيقة`, price: cost, quantity: 1 }],
-        subtotal: cost,
-        discountAmount: 0,
-        tax: 0,
-        total: cost,
-        date: new Date().toLocaleString('ar-EG'),
-        timestamp: Date.now(),
+        subtotal: cost, discountAmount: 0, tax: 0, total: cost,
+        date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
         note: `بلايستيشن - ${device.name}`,
-        shiftId: activeShift?.id || null,
-        cashierName: currentUser.name
+        shiftId: activeShift?.id || null, cashierName: currentUser.name
       };
       const newOrders = [...orders, psOrder];
       setField('orders', newOrders);
@@ -619,18 +569,9 @@ export default function App() {
 
   // ========== POS Logic ==========
   const processOrder = useCallback(() => {
-    if (cart.length === 0) {
-      showToast('السلة فارغة', 'error');
-      return;
-    }
-    if (orderType === 'dine_in' && !activeTableId) {
-      showToast('يرجى تحديد الطاولة أولاً!', 'error');
-      return;
-    }
-    if (currentUser.role === 'cashier' && !activeShift) {
-      showToast('يجب استلام عهدة أولاً!', 'error');
-      return;
-    }
+    if (cart.length === 0) { showToast('السلة فارغة', 'error'); return; }
+    if (orderType === 'dine_in' && !activeTableId) { showToast('يرجى تحديد الطاولة أولاً!', 'error'); return; }
+    if (currentUser.role === 'cashier' && !activeShift) { showToast('يجب استلام عهدة أولاً!', 'error'); return; }
 
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     let discount = 0;
@@ -648,53 +589,32 @@ export default function App() {
       if (product?.recipe) {
         product.recipe.forEach(ing => {
           const idx = newRM.findIndex(rm => rm.id === ing.materialId);
-          if (idx !== -1) {
-            newRM[idx].currentStock = Math.max(0, newRM[idx].currentStock - (ing.amount * cartItem.quantity));
-          }
+          if (idx !== -1) newRM[idx].currentStock = Math.max(0, newRM[idx].currentStock - (ing.amount * cartItem.quantity));
         });
       }
     });
 
     const newOrder = {
-      id: Date.now(),
-      items: cart,
-      subtotal,
+      id: Date.now(), items: cart, subtotal,
       discountAmount: discount,
       discountType: discount > 0 ? discountType : null,
       discountValue: discount > 0 ? parseFloat(discountValue) : null,
-      tax,
-      total,
-      date: new Date().toLocaleString('ar-EG'),
-      timestamp: Date.now(),
+      tax, total,
+      date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
       note: orderType === 'takeaway' ? 'تيك أواي' : `صالة - ${tables.find(t => t.id === activeTableId)?.name || ''}`,
-      shiftId: activeShift?.id || null,
-      cashierName: currentUser.name
+      shiftId: activeShift?.id || null, cashierName: currentUser.name
     };
 
     const newOrders = [...orders, newOrder];
     let newActiveTableOrders = { ...activeTableOrders };
-    if (orderType === 'dine_in' && activeTableId) {
-      delete newActiveTableOrders[activeTableId];
-    }
+    if (orderType === 'dine_in' && activeTableId) delete newActiveTableOrders[activeTableId];
 
     setState({
-      rawMaterials: newRM,
-      orders: newOrders,
-      activeTableOrders: newActiveTableOrders,
-      cart: [],
-      lastOrder: newOrder,
-      orderType: 'takeaway',
-      activeTableId: null,
-      isMobileCartOpen: false,
-      discountValue: ''
+      rawMaterials: newRM, orders: newOrders, activeTableOrders: newActiveTableOrders,
+      cart: [], lastOrder: newOrder, orderType: 'takeaway',
+      activeTableId: null, isMobileCartOpen: false, discountValue: ''
     });
-
-    syncToCloud({
-      rawMaterials: newRM,
-      orders: newOrders,
-      activeTableOrders: newActiveTableOrders
-    });
-
+    syncToCloud({ rawMaterials: newRM, orders: newOrders, activeTableOrders: newActiveTableOrders });
     showToast(`تم إتمام الطلب بقيمة ${total.toFixed(2)} ج`, 'success');
   }, [cart, orderType, activeTableId, currentUser, activeShift, discountValue, discountType, isTaxEnabled,
       rawMaterials, products, tables, orders, activeTableOrders, setState, syncToCloud, showToast]);
@@ -704,13 +624,7 @@ export default function App() {
     setField('isHoldingTable', true);
     try {
       const newActiveTableOrders = { ...activeTableOrders, [activeTableId]: cart };
-      setState({
-        activeTableOrders: newActiveTableOrders,
-        cart: [],
-        activeTableId: null,
-        orderType: 'takeaway',
-        isMobileCartOpen: false
-      });
+      setState({ activeTableOrders: newActiveTableOrders, cart: [], activeTableId: null, orderType: 'takeaway', isMobileCartOpen: false });
       await syncToCloud({ activeTableOrders: newActiveTableOrders });
       showToast('تم حفظ الطلب على الطاولة', 'success');
     } catch (error) {
@@ -728,28 +642,18 @@ export default function App() {
       const now = new Date();
       switch (reportPeriod) {
         case 'daily': return date.toDateString() === now.toDateString();
-        case 'weekly': {
-          const start = new Date(now);
-          start.setDate(now.getDate() - now.getDay());
-          return date >= start;
-        }
+        case 'weekly': { const start = new Date(now); start.setDate(now.getDate() - now.getDay()); return date >= start; }
         case 'monthly': return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
         case 'quarterly': return Math.floor(date.getMonth() / 3) === Math.floor(now.getMonth() / 3) && date.getFullYear() === now.getFullYear();
-        case 'semi': {
-          const half = Math.floor(date.getMonth() / 6);
-          return half === Math.floor(now.getMonth() / 6) && date.getFullYear() === now.getFullYear();
-        }
+        case 'semi': { const half = Math.floor(date.getMonth() / 6); return half === Math.floor(now.getMonth() / 6) && date.getFullYear() === now.getFullYear(); }
         case 'yearly': return date.getFullYear() === now.getFullYear();
         default: return true;
       }
     };
-
     const filteredOrders = orders.filter(o => filterByPeriod(o.timestamp));
     const filteredExpenses = expenses.filter(e => filterByPeriod(new Date(e.date).getTime()));
-
     const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.total, 0);
     const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
-
     let totalCogs = 0;
     filteredOrders.forEach(o => {
       o.items?.forEach(item => {
@@ -757,25 +661,14 @@ export default function App() {
         if (product?.recipe) {
           product.recipe.forEach(ing => {
             const material = rawMaterials.find(rm => rm.id === ing.materialId);
-            if (material) {
-              totalCogs += ing.amount * item.quantity * material.costPerUnit;
-            }
+            if (material) totalCogs += ing.amount * item.quantity * material.costPerUnit;
           });
         }
       });
     });
-
-    return {
-      totalRevenue,
-      totalExpenses,
-      totalCogs,
-      netProfit: totalRevenue - (totalExpenses + totalCogs),
-      orders: filteredOrders,
-      ordersCount: filteredOrders.length
-    };
+    return { totalRevenue, totalExpenses, totalCogs, netProfit: totalRevenue - (totalExpenses + totalCogs), orders: filteredOrders, ordersCount: filteredOrders.length };
   }, [orders, expenses, rawMaterials, products, reportPeriod]);
 
-  // ========== AuthHandler Success Callback ==========
   const handleAuthSuccess = useCallback(async (user) => {
     await processUserRole(user);
   }, [processUserRole]);
@@ -795,8 +688,7 @@ export default function App() {
     );
   }
 
-  // ========== Render Routing ==========
-  // إذا كان المسار هو /auth/email-link، نعرض AuthHandler فقط
+  // Email link auth route
   if (location.pathname === '/auth/email-link') {
     return (
       <ErrorBoundary>
@@ -805,20 +697,13 @@ export default function App() {
     );
   }
 
-  // باقي واجهة التطبيق ستأتي في الأجزاء التالية
-  return (
-    <ErrorBoundary>
-      {/* ... */}
-    </ErrorBoundary>
-  );
-}
-  // ========== Main Return (continued) ==========
+  // ========== MAIN RETURN — single return for all app states ==========
   return (
     <ErrorBoundary>
       <div className={isDarkMode ? 'dark' : ''}>
         <Toaster />
 
-        {/* شريط حالة الاتصال والمزامنة */}
+        {/* ===== Sync / Connection status bar ===== */}
         <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all
           ${!isOnline ? 'bg-rose-600 text-white' : syncStatus === 'error' ? 'bg-rose-600 text-white' :
             syncStatus === 'saving' ? 'bg-amber-500 text-white' : syncStatus === 'success' ? 'bg-emerald-500 text-white' :
@@ -850,8 +735,12 @@ export default function App() {
           </span>
         </div>
 
-        {/* ========== شاشة تسجيل الدخول ========== */}
+        {/* ========================================
+            SCREEN ROUTING
+            ======================================== */}
+
         {!currentUser ? (
+          /* ===== Login Screen ===== */
           <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans relative overflow-hidden p-4 pt-10">
             <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
@@ -870,67 +759,45 @@ export default function App() {
                 </button>
               </div>
 
-              {/* زر المنيو الرقمي */}
               <div className="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
                 <button onClick={() => setState({ currentUser: { role: 'customer' } })} className="w-full bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-600 dark:hover:text-white font-black py-4 rounded-xl transition-all shadow-sm text-lg flex justify-center items-center gap-2">
                   <Store size={22} /> تصفح المنيو الرقمي (للزبائن)
                 </button>
               </div>
 
-              {/* أزرار اختيار طريقة الدخول */}
               <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-slate-700 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setField('loginMethod', 'password')}
-                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${
-                    loginMethod === 'password'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-                >
+                <button type="button" onClick={() => setField('loginMethod', 'password')}
+                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'password' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
                   <Lock size={14} className="inline ml-1" /> كلمة المرور
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setField('loginMethod', 'emailLink')}
-                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${
-                    loginMethod === 'emailLink'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-                >
+                <button type="button" onClick={() => setField('loginMethod', 'emailLink')}
+                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'emailLink' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
                   <Mail size={14} className="inline ml-1" /> رابط سريع
                 </button>
               </div>
 
-              {/* رسائل الخطأ العامة */}
               {loginError && loginMethod === 'password' && (
                 <div className="mb-5 p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100 dark:border-rose-800">
                   <ShieldAlert size={18} /> {loginError}
                 </div>
               )}
 
-              {/* نموذج كلمة المرور */}
               {loginMethod === 'password' ? (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <p className="text-sm font-bold text-slate-600 dark:text-slate-400">تسجيل دخول الموظفين</p>
                   <div className="relative">
                     <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                    <input
-                      required type="email" placeholder="البريد الإلكتروني" value={loginEmail}
+                    <input required type="email" placeholder="البريد الإلكتروني" value={loginEmail}
                       onChange={e => { setField('loginEmail', e.target.value); setField('loginError', ''); }}
                       className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm"
-                      dir="ltr" autoComplete="email"
-                    />
+                      dir="ltr" autoComplete="email" />
                   </div>
                   <div className="relative">
                     <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                    <input
-                      required type="password" placeholder="كلمة المرور" value={loginPassword}
+                    <input required type="password" placeholder="كلمة المرور" value={loginPassword}
                       onChange={e => { setField('loginPassword', e.target.value); setField('loginError', ''); }}
                       className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors tracking-widest text-left"
-                      dir="ltr" autoComplete="current-password"
-                    />
+                      dir="ltr" autoComplete="current-password" />
                   </div>
                   <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
                     {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : null}
@@ -938,41 +805,24 @@ export default function App() {
                   </button>
                 </form>
               ) : (
-                /* نموذج الرابط السريع (Email Link) */
                 <div className="space-y-4">
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-400">
-                    أدخل بريدك الإلكتروني وسنرسل لك رابط تسجيل دخول فوري.
-                  </p>
-
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-400">أدخل بريدك الإلكتروني وسنرسل لك رابط تسجيل دخول فوري.</p>
                   {emailLinkError && (
                     <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl text-sm flex items-center gap-2">
                       <AlertCircle size={16} /> {emailLinkError}
                     </div>
                   )}
-
                   {emailLinkSent ? (
                     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl text-center border border-emerald-200 dark:border-emerald-800">
                       <Mail className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
                       <h3 className="font-black text-lg text-emerald-700 dark:text-emerald-400 mb-2">تم إرسال الرابط!</h3>
                       <p className="text-sm text-emerald-600 dark:text-emerald-300 font-bold">
-                        أرسلنا رابط تسجيل الدخول إلى
-                        <br />
+                        أرسلنا رابط تسجيل الدخول إلى<br />
                         <span dir="ltr" className="text-base mt-1 block">{emailLinkEmail}</span>
                       </p>
-                      <p className="text-xs text-emerald-500 mt-4">
-                        افتح بريدك الإلكتروني وانقر على الرابط لتسجيل الدخول.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setState({
-                            emailLinkSent: false,
-                            emailLinkEmail: '',
-                            emailLinkError: '',
-                            loginMethod: 'password'
-                          });
-                        }}
-                        className="mt-4 text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline"
-                      >
+                      <p className="text-xs text-emerald-500 mt-4">افتح بريدك الإلكتروني وانقر على الرابط لتسجيل الدخول.</p>
+                      <button onClick={() => setState({ emailLinkSent: false, emailLinkEmail: '', emailLinkError: '', loginMethod: 'password' })}
+                        className="mt-4 text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline">
                         العودة لتسجيل الدخول بكلمة المرور
                       </button>
                     </div>
@@ -980,40 +830,20 @@ export default function App() {
                     <form onSubmit={handleSendEmailLink} className="space-y-4">
                       <div className="relative">
                         <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                        <input
-                          required
-                          type="email"
-                          placeholder="البريد الإلكتروني"
-                          value={emailLinkEmail}
-                          onChange={(e) => {
-                            setField('emailLinkEmail', e.target.value);
-                            setField('emailLinkError', '');
-                          }}
+                        <input required type="email" placeholder="البريد الإلكتروني" value={emailLinkEmail}
+                          onChange={(e) => { setField('emailLinkEmail', e.target.value); setField('emailLinkError', ''); }}
                           className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm"
-                          dir="ltr"
-                          autoComplete="email"
-                        />
+                          dir="ltr" autoComplete="email" />
                       </div>
-                      <button
-                        type="submit"
-                        disabled={emailLinkLoading}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2"
-                      >
-                        {emailLinkLoading ? (
-                          <>
-                            <Loader2 size={20} className="animate-spin" />
-                            جاري الإرسال...
-                          </>
-                        ) : (
-                          'إرسال رابط الدخول'
-                        )}
+                      <button type="submit" disabled={emailLinkLoading}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
+                        {emailLinkLoading ? <><Loader2 size={20} className="animate-spin" /> جاري الإرسال...</> : 'إرسال رابط الدخول'}
                       </button>
                     </form>
                   )}
                 </div>
               )}
 
-              {/* تلميح للإيميلات */}
               <div className="mt-5 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700">
                 <p className="text-xs font-black text-slate-500 dark:text-slate-400 mb-2">📧 صيغة الإيميلات:</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">مدير: <span className="text-indigo-500" dir="ltr">admin.c1@coffeeerp.app</span></p>
@@ -1022,8 +852,9 @@ export default function App() {
               </div>
             </div>
           </div>
+
         ) : currentUser.role === 'customer' ? (
-          /* ========== منيو رقمي للزبائن ========== */
+          /* ===== Digital Menu (Customer) ===== */
           <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-y-auto custom-scrollbar pb-10 pt-7">
             <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
               <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee /> منيو {globalSettings.appName || 'الكافيه'}</h1>
@@ -1071,20 +902,12 @@ export default function App() {
               })}
             </div>
           </div>
+
         ) : (
-          /* ========== الواجهة الرئيسية للموظفين ========== */
-          <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden w-full pt-7">
-            {/* القائمة الجانبية وباقي المحتوى سيتم إكماله في الرسالة التالية */}
-          </div>
-        )}
-      </div>
-    </ErrorBoundary>
-  );
-}
-          /* ========== الواجهة الرئيسية للموظفين ========== */
+          /* ===== Employee / Admin Main Interface ===== */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden w-full pt-7">
 
-            {/* ===== القائمة الجانبية (للمدير فقط) ===== */}
+            {/* ===== Sidebar (Admin only) ===== */}
             {currentUser.role === 'admin' && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileMenuOpen', false)} />}
@@ -1137,9 +960,9 @@ export default function App() {
               </>
             )}
 
-            {/* ===== المحتوى الرئيسي ===== */}
+            {/* ===== Main content area ===== */}
             <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
-              {/* الهيدر */}
+              {/* Header */}
               <header className="p-3 md:p-4 md:px-8 flex justify-between items-center shadow-sm z-30 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
                   {currentUser.role === 'admin' && <button onClick={() => setField('isMobileMenuOpen', true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19} /></button>}
@@ -1166,7 +989,8 @@ export default function App() {
               </header>
 
               <div className="flex-1 overflow-auto custom-scrollbar relative">
-                                {/* ===== شاشة استلام عهدة الكاشير ===== */}
+
+                {/* ===== Cashier: No active shift gate ===== */}
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
                   <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
                     <div className="bg-white dark:bg-slate-800 p-6 md:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
@@ -1190,14 +1014,13 @@ export default function App() {
                       </form>
                     </div>
                   </div>
+
                 ) : currentUser.role === 'super_admin' ? (
                   /* ===== Super Admin Dashboard ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                       <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة</h2></div>
-                      <div className="flex gap-2 w-full md:w-auto">
-                        <button onClick={() => { setState({ formData: { isNew: true }, activeModal: 'tenant' }); }} className="flex-1 md:flex-none justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Plus size={17} /> عميل جديد</button>
-                      </div>
+                      <button onClick={() => setState({ formData: { isNew: true }, activeModal: 'tenant' })} className="flex-1 md:flex-none justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Plus size={17} /> عميل جديد</button>
                     </div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="overflow-x-auto custom-scrollbar">
@@ -1215,12 +1038,8 @@ export default function App() {
                                 <td className="p-5 text-slate-600 dark:text-slate-300">{cafe.subscriptionEnds}</td>
                                 <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td>
                                 <td className="p-5 text-center flex justify-center gap-2">
-                                  <button onClick={() => {
-                                    const newTenants = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t);
-                                    setField('tenants', newTenants);
-                                    syncPlatformToCloud({ tenants: newTenants });
-                                  }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">تبديل</button>
-                                  <button onClick={() => { setState({ formData: cafe, activeModal: 'tenant' }); }} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold">تعديل</button>
+                                  <button onClick={() => { const newTenants = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setField('tenants', newTenants); syncPlatformToCloud({ tenants: newTenants }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">تبديل</button>
+                                  <button onClick={() => setState({ formData: cafe, activeModal: 'tenant' })} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold">تعديل</button>
                                 </td>
                               </tr>
                             ))}
@@ -1229,10 +1048,10 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
                 ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
-                  /* ===== نقطة البيع ===== */
+                  /* ===== POS ===== */
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 lg:p-6 gap-4 lg:gap-6 overflow-hidden relative">
-                    {/* قائمة المنتجات */}
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden pb-16 lg:pb-0">
                       <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
                         <button onClick={() => { setField('orderType', 'takeaway'); setField('activeTableId', null); }} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'takeaway' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400'}`}>تيك أواي</button>
@@ -1268,16 +1087,10 @@ export default function App() {
                           const hasOffer = op < p.price;
                           return (
                             <button key={p.id} onClick={() => {
-                              if (orderType === 'dine_in' && !activeTableId) {
-                                showToast('الرجاء اختيار طاولة', 'error');
-                                return;
-                              }
+                              if (orderType === 'dine_in' && !activeTableId) { showToast('الرجاء اختيار طاولة', 'error'); return; }
                               const existing = cart.find(i => i.id === p.id);
-                              if (existing) {
-                                setField('cart', cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i));
-                              } else {
-                                setField('cart', [...cart, { ...p, price: op, originalPrice: p.price, quantity: 1 }]);
-                              }
+                              if (existing) setField('cart', cart.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i));
+                              else setField('cart', [...cart, { ...p, price: op, originalPrice: p.price, quantity: 1 }]);
                             }} className="bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col items-center text-center gap-2 group relative">
                               {hasOffer && <div className="absolute top-2 right-2 bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">عرض</div>}
                               {p.image ? <img src={p.image} alt={p.name} className="w-16 h-16 rounded-full object-cover shadow-sm group-hover:scale-110 transition-transform border-2 border-indigo-50 dark:border-slate-700" onError={e => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=200&q=80'; }} /> : <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded-full flex items-center justify-center"><Coffee className="w-7 h-7" /></div>}
@@ -1289,7 +1102,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* شريط السلة السفلي للموبايل */}
+                    {/* Mobile cart bar */}
                     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 p-3 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 flex justify-between items-center">
                       <div className="font-black text-base text-indigo-600 dark:text-indigo-400">
                         {(() => {
@@ -1302,7 +1115,7 @@ export default function App() {
                       <button onClick={() => setField('isMobileCartOpen', true)} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg"><ShoppingCart size={17} /> السلة ({cart.length})</button>
                     </div>
 
-                    {/* لوحة السلة */}
+                    {/* Cart panel */}
                     <div className={`w-full lg:w-[350px] xl:w-[420px] bg-white dark:bg-slate-800 rounded-t-3xl lg:rounded-3xl shadow-2xl lg:shadow-md border border-slate-200 dark:border-slate-700 flex flex-col h-[85vh] lg:h-full fixed lg:relative bottom-0 left-0 right-0 z-40 transition-transform duration-300 ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
                       <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 rounded-t-3xl flex justify-between items-center shrink-0">
                         <h3 className="font-black text-lg flex items-center gap-2 text-slate-800 dark:text-white"><ShoppingCart className="text-indigo-500 w-5 h-5" /> السلة {activeTableId && <span className="text-indigo-600 text-xs bg-indigo-100 px-2 py-1 rounded-lg">{tables.find(t => t.id === activeTableId)?.name}</span>}</h3>
@@ -1375,8 +1188,9 @@ export default function App() {
                     </div>
                     {isMobileCartOpen && <div className="fixed inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileCartOpen', false)} />}
                   </div>
-                            ) : currentRoute === 'dashboard' ? (
-                  /* ===== لوحة القيادة ===== */
+
+                ) : currentRoute === 'dashboard' ? (
+                  /* ===== Dashboard ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white">الملخص العام</h2>
@@ -1402,8 +1216,9 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
                 ) : currentRoute === 'reports' ? (
-                  /* ===== التقارير ===== */
+                  /* ===== Reports ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
                     <div className="flex items-center gap-3 mb-2"><FileText className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">التقارير والتصدير</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
@@ -1447,8 +1262,9 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
                 ) : currentRoute === 'shifts' ? (
-                  /* ===== الورديات ===== */
+                  /* ===== Shifts ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">سجل الورديات</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -1480,8 +1296,9 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
                 ) : currentRoute === 'inventory' ? (
-                  /* ===== المواد الخام ===== */
+                  /* ===== Inventory ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 w-8 h-8" /> المواد الخام</h2>
@@ -1501,7 +1318,7 @@ export default function App() {
                                 <td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td>
                                 <td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock <= 0 ? 'bg-red-100 text-red-700' : rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock}</span></td>
                                 <td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td>
-                                <td className="p-5 text-center"><button onClick={() => { setState({ deleteConfig: { type: 'material', id: rm.id }, activeModal: 'delete' }); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
+                                <td className="p-5 text-center"><button onClick={() => setState({ deleteConfig: { type: 'material', id: rm.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
                               </tr>
                             ))}
                           </tbody>
@@ -1509,8 +1326,9 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
                 ) : currentRoute === 'products' ? (
-                  /* ===== المنتجات ===== */
+                  /* ===== Products ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Coffee className="text-indigo-500 w-8 h-8" /> المنتجات</h2>
@@ -1536,17 +1354,15 @@ export default function App() {
                               <span className="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1 rounded-xl font-black h-fit text-sm">{p.price} ج</span>
                             </div>
                             <div className="space-y-1.5 mb-4">{p.recipe?.map((r, i) => <div key={i} className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/50 p-2.5 rounded-xl flex justify-between border border-slate-100 dark:border-slate-600"><span>{rawMaterials.find(rm => rm.id === r.materialId)?.name}</span><span className="text-indigo-600 dark:text-indigo-400">{r.amount} {rawMaterials.find(rm => rm.id === r.materialId)?.unit}</span></div>)}</div>
-                            <button onClick={() => { setState({ deleteConfig: { type: 'product', id: p.id }, activeModal: 'delete' }); }} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 p-2.5 rounded-xl transition-colors"><Trash2 size={15} /></button>
+                            <button onClick={() => setState({ deleteConfig: { type: 'product', id: p.id }, activeModal: 'delete' })} className="text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 p-2.5 rounded-xl transition-colors"><Trash2 size={15} /></button>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                )
-                /* سيتم إضافة باقي المسارات (offers, playstation, tables, hr, expenses) في الرسالة التالية */
-                }
-                                ) : currentRoute === 'offers' ? (
-                  /* ===== العروض ===== */
+
+                ) : currentRoute === 'offers' ? (
+                  /* ===== Offers ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Tag className="text-indigo-500 w-8 h-8" /> العروض والخصومات</h2>
@@ -1570,7 +1386,7 @@ export default function App() {
                               </div>
                               <div className="flex gap-2 mt-4">
                                 <button onClick={() => { const newOffers = offers.map(o => o.id === offer.id ? { ...o, isActive: !o.isActive } : o); setField('offers', newOffers); syncToCloud({ offers: newOffers }); }} className={`flex-1 py-2 rounded-xl text-xs font-black transition-colors ${offer.isActive ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{offer.isActive ? 'إيقاف' : 'تفعيل'}</button>
-                                <button onClick={() => { setState({ deleteConfig: { type: 'offer', id: offer.id }, activeModal: 'delete' }); }} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 rounded-xl"><Trash2 size={14} /></button>
+                                <button onClick={() => setState({ deleteConfig: { type: 'offer', id: offer.id }, activeModal: 'delete' })} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 rounded-xl"><Trash2 size={14} /></button>
                               </div>
                             </div>
                           );
@@ -1578,8 +1394,9 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
                 ) : currentRoute === 'playstation' ? (
-                  /* ===== بلايستيشن ===== */
+                  /* ===== PlayStation ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Gamepad2 className="text-indigo-500 w-8 h-8" /> بلايستيشن</h2>
@@ -1601,7 +1418,7 @@ export default function App() {
                             ) : (
                               <button onClick={() => startPsSession(device.id)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Play size={16} /> بدء جلسة</button>
                             )}
-                            <button onClick={() => { setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' }); }} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
+                            <button onClick={() => setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' })} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
                           </div>
                         );
                       })}
@@ -1631,8 +1448,9 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
                 ) : currentRoute === 'tables' ? (
-                  /* ===== الطاولات ===== */
+                  /* ===== Tables ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Utensils className="text-indigo-500 w-8 h-8" /> الصالة والطاولات</h2>
@@ -1644,13 +1462,14 @@ export default function App() {
                           <Armchair className="text-slate-300 dark:text-slate-600 mb-3 w-14 h-14" />
                           <h3 className="font-black text-base text-slate-800 dark:text-white line-clamp-1 text-center">{t.name}</h3>
                           <p className="text-sm font-bold text-indigo-500">{t.capacity} كراسي</p>
-                          <button onClick={() => { setState({ deleteConfig: { type: 'table', id: t.id }, activeModal: 'delete' }); }} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-1.5 rounded-xl transition-all"><Trash2 size={13} /></button>
+                          <button onClick={() => setState({ deleteConfig: { type: 'table', id: t.id }, activeModal: 'delete' })} className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 text-rose-500 bg-rose-50 dark:bg-rose-900/30 p-1.5 rounded-xl transition-all"><Trash2 size={13} /></button>
                         </div>
                       ))}
                     </div>
                   </div>
+
                 ) : currentRoute === 'hr' ? (
-                  /* ===== الموظفين ===== */
+                  /* ===== HR ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Users className="text-indigo-500 w-8 h-8" /> الموظفين والرواتب</h2>
@@ -1671,7 +1490,7 @@ export default function App() {
                                 <td className="p-2"><SafeNumberInput value={emp.deductions} onSave={(v) => genericSave('employees', employees, { deductions: v, id: emp.id })} colorClass="text-rose-500 focus:border-rose-500 border-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800" /></td>
                                 <td className="p-5 text-center font-black text-emerald-600 dark:text-emerald-400 text-base">{emp.salary - (parseFloat(emp.advances) || 0) - (parseFloat(emp.deductions) || 0)} ج</td>
                                 <td className="p-5 text-center"><button onClick={() => setField('selectedEmployeeReport', emp)} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 mx-auto"><User size={12} /> تفاصيل</button></td>
-                                <td className="p-5 text-center"><button onClick={() => { setState({ deleteConfig: { type: 'employee', id: emp.id }, activeModal: 'delete' }); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
+                                <td className="p-5 text-center"><button onClick={() => setState({ deleteConfig: { type: 'employee', id: emp.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
                               </tr>
                             ))}
                           </tbody>
@@ -1717,8 +1536,9 @@ export default function App() {
                       );
                     })()}
                   </div>
+
                 ) : currentRoute === 'expenses' ? (
-                  /* ===== المصروفات ===== */
+                  /* ===== Expenses ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Receipt className="text-indigo-500 w-8 h-8" /> المصروفات</h2>
@@ -1736,7 +1556,7 @@ export default function App() {
                                 <td className="p-5 font-bold text-slate-500 dark:text-slate-400">{ex.date}</td>
                                 <td className="p-5 font-black text-slate-800 dark:text-white">{ex.description}</td>
                                 <td className="p-5 font-black text-rose-500 dark:text-rose-400 text-base">{ex.amount} ج</td>
-                                <td className="p-5 text-center"><button onClick={() => { setState({ deleteConfig: { type: 'expense', id: ex.id }, activeModal: 'delete' }); }} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
+                                <td className="p-5 text-center"><button onClick={() => setState({ deleteConfig: { type: 'expense', id: ex.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
                               </tr>
                             ))}
                           </tbody>
@@ -1744,12 +1564,15 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
                 ) : null}
               </div>
             </main>
-                        {/* ===== النوافذ المنبثقة (Modals) ===== */}
 
-            {/* نافذة إضافة/تعديل كافيه (Super Admin) */}
+            {/* ========================================
+                MODALS
+                ======================================== */}
+
             {activeModal === 'tenant' && (
               <CustomModal title={formData.id && !formData.isNew ? "تعديل الكافيه" : "إضافة كافيه جديد"} onClose={closeModal}>
                 <form onSubmit={saveTenant} className="space-y-4">
@@ -1764,7 +1587,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة تقفيل الوردية */}
             {activeModal === 'closeShift' && activeShift && (
               <CustomModal title="تقفيل الوردية" onClose={closeModal}>
                 <form onSubmit={(e) => {
@@ -1788,7 +1610,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة/تعديل منتج */}
             {activeModal === 'product' && (
               <CustomModal title="إضافة صنف" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: e.target.image.value || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
@@ -1816,7 +1637,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة عرض */}
             {activeModal === 'offer' && (
               <CustomModal title="إضافة عرض" onClose={closeModal}>
                 <form onSubmit={saveOffer} className="space-y-4">
@@ -1836,7 +1656,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة جهاز بلايستيشن */}
             {activeModal === 'psDevice' && (
               <CustomModal title="إضافة جهاز بلايستيشن" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('psDevices', psDevices, { name: e.target.psName.value, hourlyRate: parseFloat(e.target.hourlyRate.value) || 0 }); }} className="space-y-4">
@@ -1847,7 +1666,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة مادة خام */}
             {activeModal === 'material' && (
               <CustomModal title="مادة خام" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('rawMaterials', rawMaterials, { name: e.target.name.value, unit: e.target.unit.value, currentStock: parseFloat(e.target.currentStock.value), costPerUnit: parseFloat(e.target.costPerUnit.value) }); }} className="space-y-4">
@@ -1862,7 +1680,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة موظف */}
             {activeModal === 'employee' && (
               <CustomModal title="موظف جديد" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('employees', employees, { name: e.target.empName.value, salary: parseFloat(e.target.salary.value), advances: 0, deductions: 0 }); }} className="space-y-4">
@@ -1873,7 +1690,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة طاولة */}
             {activeModal === 'table' && (
               <CustomModal title="طاولة جديدة" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('tables', tables, { name: e.target.tableName.value, capacity: parseInt(e.target.capacity.value) }); }} className="space-y-4">
@@ -1884,7 +1700,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة إضافة مصروف */}
             {activeModal === 'expense' && (
               <CustomModal title="سند مصروف" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('expenses', expenses, { description: e.target.description.value, amount: parseFloat(e.target.amount.value), date: new Date().toISOString().split('T')[0] }); }} className="space-y-4">
@@ -1895,7 +1710,6 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة تأكيد الحذف */}
             {activeModal === 'delete' && (
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl border border-rose-100 dark:border-rose-900">
@@ -1910,7 +1724,6 @@ export default function App() {
               </div>
             )}
 
-            {/* نافذة إيصال الدفع */}
             {lastOrder && (
               <CustomModal title="إيصال الدفع" onClose={() => setField('lastOrder', null)}>
                 <div className="print-section p-8 bg-white text-black text-center font-mono border-2 border-dashed border-slate-300 rounded-2xl mx-auto max-w-xs">

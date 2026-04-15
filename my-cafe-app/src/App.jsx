@@ -22,7 +22,7 @@ import {
   Moon, Sun, X, Printer, Menu,
   Building2, Utensils, Armchair, Save, AlertCircle,
   Loader2, WifiOff, RefreshCw, Wifi, ClipboardList, Play, Power, ShieldAlert, Image as ImageIcon, Settings,
-  Undo, History, Gamepad2, Gift, Bell, BarChart, Clock, Download, AlertTriangle
+  Undo, History, Gamepad2, Gift, Bell, BarChart, Clock, Download, AlertTriangle, User
 } from 'lucide-react';
 
 // ==========================================
@@ -98,7 +98,7 @@ try {
 }
 
 // ==========================================
-// 3. مكونات مساعدة وبيانات افتراضية
+// 3. مكونات مساعدة
 // ==========================================
 const defaultProducts = [
   { id: 1, name: 'اسبريسو', category: 'مشروبات', price: 35, stock: 500, image: '' }
@@ -130,7 +130,6 @@ const CustomModal = ({ title, children, onClose }) => (
 // 4. التطبيق الرئيسي
 // ==========================================
 export default function App() {
-  // حالات النظام الأساسية
   const [fbUser, setFbUser] = useState(null);
   const [isDataLoaded, setIsDataLoaded] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
@@ -144,17 +143,16 @@ export default function App() {
   const fbUserRef = useRef(null);
   const currentUserRef = useRef(null);
 
-  // حالات الواجهة للموبايل
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // حالات تسجيل الدخول
+  // حالات تسجيل الدخول المباشر بالإيميل والباسورد
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // مجاميع البيانات (Collections)
+  // المجاميع (Collections)
   const [globalSettings, setGlobalSettings] = useState({ appName: '0%' });
   const [tenants, setTenants] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
@@ -174,7 +172,6 @@ export default function App() {
   
   const taxRate = 0.14;
 
-  // النوافذ المنبثقة
   const [activeModal, setActiveModal] = useState(null);
   const [formData, setFormData] = useState({});
   const [deleteConfig, setDeleteConfig] = useState(null);
@@ -192,9 +189,6 @@ export default function App() {
   const [selectedOfferId, setSelectedOfferId] = useState('');
   const [isHoldingTable, setIsHoldingTable] = useState(false);
 
-  // ==========================================
-  // تأثيرات المراقبة (Effects)
-  // ==========================================
   useEffect(() => {
     fbUserRef.current = fbUser;
     currentUserRef.current = currentUser;
@@ -227,6 +221,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // مراقبة الدخول وصلاحيات المستخدم
   useEffect(() => {
     if (!auth) return;
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -257,6 +252,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  // جلب بيانات المنصة (للسوبر أدمن)
   useEffect(() => {
     if (!fbUser || !db || currentUser?.role !== 'super_admin') return;
     const unsub = onSnapshot(doc(db, 'coffee_erp_platform', 'config'), (snap) => {
@@ -269,6 +265,7 @@ export default function App() {
     return () => unsub();
   }, [fbUser, currentUser?.role]);
 
+  // جلب بيانات الكافيه
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.cafeId) return;
 
@@ -282,6 +279,9 @@ export default function App() {
     setActiveTableOrders({});
     setHrTransactions([]);
     setInventoryRecords([]);
+    setPsDevices([]);
+    setPsSessions([]);
+    setOffers([]);
     setIsTaxEnabled(false);
 
     const cafeRef = doc(db, 'coffee_erp_cafes', currentUser.cafeId);
@@ -307,9 +307,7 @@ export default function App() {
     return () => unsub();
   }, [fbUser, currentUser?.cafeId]);
 
-  // ==========================================
-  // المزامنة والعمليات (Functions)
-  // ==========================================
+  // المزامنة مع السحابة
   const syncPlatformToCloud = useCallback(async (newData) => {
     if (!db || !fbUserRef.current) return;
     try {
@@ -333,6 +331,7 @@ export default function App() {
     }
   }, []);
 
+  // نظام تسجيل الدخول بالإيميل
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -491,9 +490,20 @@ export default function App() {
 
   const handlePsAction = (device) => {
     if (device.status === 'available') {
-      const updated = psDevices.map(d => d.id === device.id ? { ...d, status: 'playing', startTime: Date.now() } : d);
-      setPsDevices(updated);
-      syncToCloud({ psDevices: updated });
+      const session = {
+        id: `ps_${Date.now()}`,
+        deviceId: device.id,
+        deviceName: device.name,
+        startTime: Date.now(),
+        startTimeStr: new Date().toLocaleString('ar-EG'),
+        status: 'active',
+        cashierName: currentUser.name
+      };
+      const updatedPs = psDevices.map(d => d.id === device.id ? { ...d, status: 'playing', startTime: Date.now() } : d);
+      const updatedSessions = [...psSessions, session];
+      setPsDevices(updatedPs);
+      setPsSessions(updatedSessions);
+      syncToCloud({ psDevices: updatedPs, psSessions: updatedSessions });
     } else {
       const hours = (Date.now() - device.startTime) / (1000 * 60 * 60);
       const cost = Math.max(hours * device.hourlyRate, 5);
@@ -505,6 +515,24 @@ export default function App() {
   const confirmPsCheckout = (e) => {
     e.preventDefault();
     const cost = parseFloat(formData.cost);
+    
+    const activeSession = psSessions.find(s => s.deviceId === formData.device.id && s.status === 'active');
+    let updatedSessions = psSessions;
+
+    if (activeSession) {
+      const durationMin = Math.floor((Date.now() - activeSession.startTime) / 60000);
+      const endedSession = {
+        ...activeSession,
+        endTime: Date.now(),
+        endTimeStr: new Date().toLocaleString('ar-EG'),
+        durationMin,
+        cost,
+        status: 'ended'
+      };
+      updatedSessions = psSessions.map(s => s.id === activeSession.id ? endedSession : s);
+      setPsSessions(updatedSessions);
+    }
+
     const newOrder = {
       id: Date.now(),
       items: [{ id: `ps_${formData.device.id}`, name: `بلايستيشن - ${formData.device.name}`, price: cost, quantity: 1 }],
@@ -528,7 +556,8 @@ export default function App() {
     
     syncToCloud({
       orders: updatedOrders,
-      psDevices: updatedPs
+      psDevices: updatedPs,
+      psSessions: updatedSessions
     });
     
     closeModal();
@@ -703,6 +732,7 @@ export default function App() {
       if (tenants.find(t => t.id === formData.id)) { alert('الكود مستخدم!'); return; }
       try {
         setSyncStatus('saving');
+        // إنشاء حساب المدير
         const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.adminEmail, formData.adminPassword);
         
         await setDoc(doc(db, 'users', userCred.user.uid), {
@@ -745,6 +775,7 @@ export default function App() {
       
       if (formData.createAuth && formData.empEmail && formData.empPassword && !formData.id) {
         setSyncStatus('saving');
+        // إنشاء حساب الكاشير
         const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.empEmail, formData.empPassword);
         uid = userCred.user.uid;
         
@@ -772,18 +803,15 @@ export default function App() {
     }
   };
 
-  // ==========================================
-  // شاشة التحميل (Loading)
-  // ==========================================
+  // شاشة التحميل
   if (!isDataLoaded) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors" dir="rtl">
         <Loader2 className="w-16 h-16 animate-spin text-indigo-600 mb-4" />
-        <p className="font-black text-slate-800 dark:text-slate-300">جاري تحميل المنصة...</p>
+        <p className="font-black text-slate-800 dark:text-slate-300">جاري التحميل...</p>
       </div>
     );
   }
-
   // ==========================================
   // واجهة النظام الرئيسية (Render)
   // ==========================================
@@ -885,7 +913,7 @@ export default function App() {
                   <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)} />
                 )}
                 
-                <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform duration-300 w-64 bg-white dark:bg-slate-900 flex flex-col pt-7 border-l border-slate-200 dark:border-slate-800`}>
+                <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform duration-300 w-64 bg-white dark:bg-slate-900 flex flex-col pt-7 border-l border-slate-200 dark:border-slate-800 shadow-2xl lg:shadow-none`}>
                   <div className="p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 flex justify-between items-center">
                     <div>
                       <h2 className="text-lg font-black dark:text-white flex items-center gap-2">
@@ -1526,8 +1554,9 @@ export default function App() {
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                       {psDevices.map(d => {
-                        const isPlaying = d.status === 'playing';
-                        const elapsedMins = isPlaying ? Math.floor((currentTime - d.startTime) / 60000) : 0;
+                        const activeSession = psSessions.find(s => s.deviceId === d.id && s.status === 'active');
+                        const isPlaying = !!activeSession;
+                        const elapsedMins = isPlaying ? Math.floor((currentTime - activeSession.startTime) / 60000) : 0;
                         const currentCost = isPlaying ? Math.max((elapsedMins / 60) * d.hourlyRate, 5).toFixed(2) : 0;
                         
                         return (
@@ -1622,13 +1651,13 @@ export default function App() {
                               <td className="p-5 text-center">
                                 <button 
                                   onClick={() => { 
-                                    const u = offers.map(off => off.id === o.id ? { ...off, active: !off.active } : off); 
+                                    const u = offers.map(off => off.id === o.id ? { ...off, isActive: !off.isActive } : off); 
                                     setOffers(u); 
                                     syncToCloud({ offers: u }); 
                                   }} 
-                                  className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-colors ${o.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}
+                                  className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-colors ${o.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}
                                 >
-                                  {o.active ? 'فعال' : 'موقوف'}
+                                  {o.isActive ? 'فعال' : 'موقوف'}
                                 </button>
                               </td>
                               <td className="p-5 text-center">
@@ -2248,7 +2277,63 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة تسجيل سلفة / خصم للموظف */}
+            {/* نافذة إشعارات المخزون */}
+            {activeModal === 'notifications' && (
+              <CustomModal title="إشعارات النظام والمخزن" onClose={closeModal}>
+                <div className="space-y-3">
+                  {notifications.length === 0 ? (
+                    <p className="text-center font-bold text-slate-500 dark:text-slate-400 py-10">لا توجد إشعارات أو نواقص حالياً.</p>
+                  ) : (
+                    notifications.map(n => (
+                      <div key={n.id} className={`p-4 rounded-xl border flex gap-3 items-center font-bold text-sm ${n.type === 'exp_danger' ? 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800' : n.type === 'exp' ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' : 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
+                        <AlertTriangle size={18} className="shrink-0" />
+                        <span>{n.msg}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CustomModal>
+            )}
+
+            {/* نافذة سجل الموظف (كشف حساب) */}
+            {activeModal === 'empHistory' && formData.employee && (
+              <CustomModal title={`سجل الموظف: ${formData.employee.name}`} onClose={closeModal}>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="font-black border-b border-slate-200 dark:border-slate-700 pb-2 mb-3 dark:text-white">السلف والخصومات</h4>
+                    {hrTransactions.filter(t => t.empId === formData.employee.id).length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">لا يوجد سجل</p>
+                    ) : (
+                      hrTransactions.filter(t => t.empId === formData.employee.id).map(t => (
+                        <div key={t.id} className="flex justify-between items-center text-sm p-2 border-b border-slate-100 dark:border-slate-700">
+                          <span className="dark:text-slate-300">{t.date.split(',')[0]} - {t.reason}</span>
+                          <span className={t.type === 'advance' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}>
+                            {t.type === 'advance' ? 'سلفة' : 'خصم'} ({t.amount} ج)
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {formData.employee.hasAuth && (
+                    <div>
+                      <h4 className="font-black border-b border-slate-200 dark:border-slate-700 pb-2 mb-3 dark:text-white">الورديات المغلقة (آخر 5)</h4>
+                      {shifts.filter(s => s.cashierName === formData.employee.name && s.status === 'closed').length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">لم يقفل أي وردية بعد</p>
+                      ) : (
+                        shifts.filter(s => s.cashierName === formData.employee.name && s.status === 'closed').slice(-5).map(s => (
+                          <div key={s.id} className="flex justify-between items-center text-sm p-2 border-b border-slate-100 dark:border-slate-700">
+                            <span className="dark:text-slate-300">{s.startTime.split(',')[0]}</span>
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400">مبيعات: {s.totalSales} ج</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CustomModal>
+            )}
+
+            {/* نافذة تسجيل سلفة أو خصم */}
             {activeModal === 'hrTransaction' && (
               <CustomModal title="تسجيل سلفة أو خصم" onClose={closeModal}>
                 <form onSubmit={processHrTransaction} className="space-y-4">
@@ -2273,7 +2358,7 @@ export default function App() {
               </CustomModal>
             )}
 
-            {/* نافذة تأكيد إلغاء الفاتورة (المرتجع) */}
+            {/* نافذة تأكيد مرتجع الفاتورة */}
             {activeModal === 'voidOrder' && formData.order && (
               <CustomModal title="تأكيد مرتجع الفاتورة" onClose={closeModal}>
                 <div className="text-center p-4">
@@ -2284,6 +2369,61 @@ export default function App() {
                     <button onClick={processVoidOrder} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-black transition-colors">نعم، تأكيد المرتجع</button>
                     <button onClick={closeModal} className="flex-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white py-3 rounded-xl font-black transition-colors">إلغاء</button>
                   </div>
+                </div>
+              </CustomModal>
+            )}
+
+            {/* نافذة إضافة عرض أو خصم عام */}
+            {activeModal === 'offer' && (
+              <CustomModal title="إضافة عرض / خصم" onClose={closeModal}>
+                <form onSubmit={e => { 
+                  e.preventDefault(); 
+                  genericSave('offers', offers, setOffers, { 
+                    name: e.target.name.value, 
+                    discountType: e.target.discountType.value, 
+                    discountValue: parseFloat(e.target.discountValue.value), 
+                    active: true 
+                  }); 
+                }} className="space-y-4">
+                  <input required name="name" placeholder="اسم العرض (مثال: افتتاح، خصم موظفين)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold outline-none dark:text-white transition-colors focus:border-indigo-500" />
+                  <div className="flex gap-4">
+                    <select name="discountType" className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold outline-none dark:text-white transition-colors focus:border-indigo-500">
+                      <option value="percent">نسبة مئوية (%)</option>
+                      <option value="fixed">مبلغ ثابت (ج)</option>
+                    </select>
+                    <input required type="number" step="any" min="0" name="discountValue" placeholder="قيمة الخصم" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black outline-none dark:text-white transition-colors focus:border-indigo-500" />
+                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black transition-colors">حفظ العرض</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {/* نافذة إضافة جهاز بلايستيشن */}
+            {activeModal === 'psDevice' && (
+              <CustomModal title="جهاز بلايستيشن جديد" onClose={closeModal}>
+                <form onSubmit={e => { 
+                  e.preventDefault(); 
+                  genericSave('psDevices', psDevices, setPsDevices, { 
+                    name: e.target.name.value, 
+                    hourlyRate: parseFloat(e.target.hourlyRate.value), 
+                    status: 'available' 
+                  }); 
+                }} className="space-y-4">
+                  <input required name="name" placeholder="اسم الجهاز (مثال: PS5 غرفة 1)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold dark:text-white outline-none transition-colors focus:border-indigo-500" />
+                  <input required type="number" step="any" min="0" name="hourlyRate" placeholder="سعر الساعة (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black dark:text-white outline-none transition-colors focus:border-indigo-500" />
+                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black transition-colors">حفظ الجهاز</button>
+                </form>
+              </CustomModal>
+            )}
+
+            {/* نافذة دفع وتقفيل جهاز بلايستيشن */}
+            {activeModal === 'psCheckout' && formData.device && (
+              <CustomModal title={`دفع حساب - ${formData.device.name}`} onClose={closeModal}>
+                <div className="text-center p-4">
+                  <Gamepad2 className="w-16 h-16 text-indigo-600 dark:text-indigo-400 mx-auto mb-4" />
+                  <h3 className="text-2xl font-black mb-4 dark:text-white">إجمالي الحساب: {formData.cost} ج</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">سيتم إنهاء الجلسة وإصدار فاتورة بهذا المبلغ.</p>
+                  <button onClick={confirmPsCheckout} className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-lg transition-colors">إصدار الفاتورة</button>
                 </div>
               </CustomModal>
             )}
@@ -2344,7 +2484,8 @@ export default function App() {
                     name: e.target.name.value, 
                     unit: e.target.unit.value, 
                     currentStock: parseFloat(e.target.currentStock.value), 
-                    costPerUnit: parseFloat(e.target.costPerUnit.value) 
+                    costPerUnit: parseFloat(e.target.costPerUnit.value),
+                    expiryDate: e.target.expiryDate.value || null
                   }); 
                 }} className="space-y-4">
                   <input required name="name" placeholder="اسم المادة" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500 transition-colors" />
@@ -2357,6 +2498,10 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <input required type="number" step="any" name="currentStock" placeholder="الكمية الافتتاحية" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500 transition-colors" />
                     <input required type="number" step="any" name="costPerUnit" placeholder="تكلفة الوحدة (ج)" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-rose-500 dark:text-rose-400 text-sm outline-none focus:border-indigo-500 transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold mb-2 dark:text-slate-300">تاريخ انتهاء الصلاحية (اختياري)</label>
+                    <input type="date" name="expiryDate" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-800 dark:text-white text-sm outline-none focus:border-indigo-500 transition-colors" />
                   </div>
                   <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-lg transition-colors">حفظ المادة</button>
                 </form>
@@ -2398,6 +2543,38 @@ export default function App() {
               </CustomModal>
             )}
 
+            {/* نافذة تقفيل الوردية */}
+            {activeModal === 'closeShift' && activeShift && (
+              <CustomModal title="تقفيل الوردية" onClose={closeModal}>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const actualCash = parseFloat(e.target.actualCash.value) || 0;
+                  const shiftSales = orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0);
+                  const updatedShifts = shifts.map(s => s.id === activeShift.id ? { ...s, endTime: new Date().toLocaleString('ar-EG'), actualCash, totalSales: shiftSales, status: 'closed' } : s);
+                  setShifts(updatedShifts); 
+                  syncToCloud({ shifts: updatedShifts });
+                  closeModal(); 
+                  handleLogout();
+                }}>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/30 p-5 rounded-2xl mb-6 border border-indigo-100 dark:border-indigo-800 transition-colors">
+                    <p className="text-sm font-bold text-indigo-800 dark:text-indigo-300 flex justify-between mb-3">
+                      <span>العهدة عند الاستلام:</span>
+                      <span>{activeShift.startingCash} ج</span>
+                    </p>
+                    <p className="text-sm font-black text-indigo-800 dark:text-indigo-300 flex justify-between border-t border-indigo-200 dark:border-indigo-700 pt-3">
+                      <span>مبيعات الشيفت:</span>
+                      <span>{orders.filter(o => o.shiftId === activeShift.id && o.status !== 'voided').reduce((sum, o) => sum + o.total, 0).toFixed(2)} ج</span>
+                    </p>
+                  </div>
+                  <div className="text-right mb-7">
+                    <label className="block text-sm font-black mb-3 dark:text-white">كم المبلغ الفعلي في الدرج الآن؟</label>
+                    <input required name="actualCash" type="number" min="0" step="any" placeholder="المبلغ الصافي" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl text-center font-black text-2xl outline-none focus:border-indigo-500 dark:text-white transition-colors" />
+                  </div>
+                  <button type="submit" className="w-full bg-rose-600 hover:bg-rose-700 text-white py-4 rounded-2xl font-black shadow-lg text-lg transition-colors">تأكيد التقفيل والخروج</button>
+                </form>
+              </CustomModal>
+            )}
+
             {/* نافذة تأكيد الحذف العامة */}
             {activeModal === 'delete' && (
               <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 transition-all">
@@ -2413,7 +2590,7 @@ export default function App() {
               </div>
             )}
 
-            {/* الإيصال النهائي (الفاتورة) */}
+            {/* نافذة الإيصال النهائي (الفاتورة) */}
             {lastOrder && (
               <CustomModal title={lastOrder.status === 'voided' ? "إيصال مرتجع" : "إيصال الدفع"} onClose={() => setLastOrder(null)}>
                 <div className="print-section p-8 bg-white text-black text-center font-mono border-2 border-dashed border-slate-300 rounded-2xl mx-auto max-w-xs relative overflow-hidden">

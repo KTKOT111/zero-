@@ -20,13 +20,8 @@ const OWNER_EMAIL = 'owner@coffeeerp.app';
 const STOCK_ALERT_THRESHOLD = 50;
 const TAX_RATE = 0.14;
 
-const defaultProducts = [
-  { id: 1, name: 'اسبريسو سينجل', category: 'مشروبات ساخنة', price: 35, stock: 500, image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=200&q=80' },
-  { id: 2, name: 'لاتيه', category: 'مشروبات ساخنة', price: 55, stock: 500, image: 'https://images.unsplash.com/photo-1570968915860-54d5c301fa9f?w=200&q=80' },
-  { id: 3, name: 'آيس كراميل ميكياتو', category: 'مشروبات باردة', price: 70, stock: 500, image: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=200&q=80' },
-  { id: 4, name: 'موهيتو فراولة', category: 'فرابيه وموهيتو', price: 50, stock: 500, image: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=200&q=80' },
-  { id: 5, name: 'تشيز كيك لوتس', category: 'حلويات', price: 80, stock: 20, image: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=200&q=80' }
-];
+// تم مسح المنتجات الافتراضية ليبدأ النظام فارغاً
+const defaultProducts = [];
 
 // ========== Reducer ==========
 const initialState = {
@@ -229,15 +224,17 @@ export default function App() {
   }, [fbUser, currentUser?.cafeId, setField, setState, showToast]);
 
   const syncPlatformToCloud = useCallback(async (newData) => {
-    if (!db || !fbUserRef.current) return;
+    if (!db || !fbUserRef.current) throw new Error("قاعدة البيانات غير متصلة");
     try {
       await setDoc(doc(db, 'coffee_erp_platform', 'config'), {
         ...newData,
         lastUpdated: new Date().toISOString()
       }, { merge: true });
+      return true;
     } catch (e) {
       console.error("Platform sync error:", e);
-      showToast('فشل مزامنة إعدادات المنصة', 'error');
+      showToast(`فشل المزامنة: ${e.message}`, 'error');
+      throw e; 
     }
   }, [showToast]);
 
@@ -386,7 +383,6 @@ export default function App() {
     });
     showToast('تم تسجيل الخروج', 'success');
   }, [setState, showToast]);
-
   // ========== Helper Functions & Computed Values ==========
   const categories = useMemo(() => {
     return Array.from(new Set(products.map(p => p.category).filter(Boolean)))
@@ -428,7 +424,7 @@ export default function App() {
     return Math.max(0, product.price - validOffer.discountValue);
   }, [offers]);
 
-  // ========== Modal & Form Handlers ==========
+  // ========== Modal, Form & Image Upload Handlers ==========
   const openModal = useCallback((type, data = {}) => {
     if (type === 'product' && !data.recipe) data.recipe = [];
     setState({ formData: data, activeModal: type });
@@ -439,8 +435,31 @@ export default function App() {
   }, [setState]);
 
   const handleFormChange = useCallback((e) => {
-    setState({ formData: { ...formData, [e.target.name]: e.target.value } });
-  }, [formData, setState]);
+    setState({ formData: { ...stateRef.current.formData, [e.target.name]: e.target.value } });
+  }, [setState]);
+
+  // كود رفع وضغط الصور قبل الحفظ
+  const handleImageUpload = useCallback((e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400; // تصغير العرض لـ 400 بيكسل كحد أقصى لتسريع النظام
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); // ضغط الجودة لـ 60%
+        setState({ formData: { ...stateRef.current.formData, image: compressedBase64 } });
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  }, [setState]);
 
   const confirmDelete = useCallback(() => {
     if (!deleteConfig) return;
@@ -475,50 +494,53 @@ export default function App() {
 
   const genericSave = useCallback((collectionKey, arr, extra = {}) => {
     let newArr;
-    if (formData.id) {
-      newArr = arr.map(item => item.id === formData.id ? { ...item, ...formData, ...extra } : item);
+    if (stateRef.current.formData.id) {
+      newArr = arr.map(item => item.id === stateRef.current.formData.id ? { ...item, ...stateRef.current.formData, ...extra } : item);
     } else {
       const newId = `${collectionKey}_${Date.now()}`;
-      newArr = [...arr, { ...formData, ...extra, id: newId }];
+      newArr = [...arr, { ...stateRef.current.formData, ...extra, id: newId }];
     }
     const stateMapping = { rawMaterials: 'rawMaterials', products: 'products', employees: 'employees', tables: 'tables', expenses: 'expenses', offers: 'offers', psDevices: 'psDevices' };
     setField(stateMapping[collectionKey], newArr);
     syncToCloud({ [collectionKey]: newArr });
     closeModal();
     showToast('تم الحفظ بنجاح', 'success');
-  }, [formData, setField, syncToCloud, closeModal, showToast]);
+  }, [setField, syncToCloud, closeModal, showToast]);
 
-  const saveTenant = useCallback((e) => {
+  const saveTenant = useCallback(async (e) => {
     e.preventDefault();
-    if (formData.isNew) {
-      if (tenants.find(t => t.id === formData.id)) { showToast('كود الكافيه موجود بالفعل!', 'error'); return; }
-      const newTenant = { ...formData, status: 'active' };
+    const currentForm = stateRef.current.formData;
+    let newTenants;
+    if (currentForm.isNew) {
+      if (tenants.find(t => t.id === currentForm.id)) { showToast('كود الكافيه موجود بالفعل!', 'error'); return; }
+      const newTenant = { ...currentForm, status: 'active' };
       delete newTenant.isNew;
-      const newTenants = [...tenants, newTenant];
-      setField('tenants', newTenants);
-      syncPlatformToCloud({ tenants: newTenants });
+      newTenants = [...tenants, newTenant];
     } else {
-      const newTenants = tenants.map(t => t.id === formData.id ? { ...t, ...formData } : t);
-      setField('tenants', newTenants);
-      syncPlatformToCloud({ tenants: newTenants });
+      newTenants = tenants.map(t => t.id === currentForm.id ? { ...t, ...currentForm } : t);
     }
-    closeModal();
-    showToast('تم حفظ بيانات الكافيه', 'success');
-  }, [formData, tenants, setField, syncPlatformToCloud, closeModal, showToast]);
+    try {
+      await syncPlatformToCloud({ tenants: newTenants });
+      setField('tenants', newTenants);
+      closeModal();
+      showToast('تم حفظ بيانات الكافيه', 'success');
+    } catch (error) {}
+  }, [tenants, setField, syncPlatformToCloud, closeModal, showToast]);
 
   const saveOffer = useCallback((e) => {
     e.preventDefault();
+    const currentForm = stateRef.current.formData;
     genericSave('offers', offers, {
-      name: formData.offerName,
-      discountType: formData.offerDiscountType || 'percent',
-      discountValue: parseFloat(formData.offerDiscountValue) || 0,
-      productId: formData.offerProductId || null,
-      category: formData.offerCategory || null,
-      startDate: formData.offerStartDate || null,
-      endDate: formData.offerEndDate || null,
+      name: currentForm.offerName,
+      discountType: currentForm.offerDiscountType || 'percent',
+      discountValue: parseFloat(currentForm.offerDiscountValue) || 0,
+      productId: currentForm.offerProductId || null,
+      category: currentForm.offerCategory || null,
+      startDate: currentForm.offerStartDate || null,
+      endDate: currentForm.offerEndDate || null,
       isActive: true
     });
-  }, [formData, offers, genericSave]);
+  }, [offers, genericSave]);
 
   // ========== PlayStation Logic ==========
   const startPsSession = useCallback((deviceId) => {
@@ -544,16 +566,31 @@ export default function App() {
     if (!session) return;
     const device = psDevices.find(d => d.id === session.deviceId);
     if (!device) return;
-    const durationMin = Math.ceil((Date.now() - session.startTime) / 60000);
-    const cost = Math.ceil(durationMin / 60) * (device.hourlyRate || 0);
-    const endedSession = { ...session, endTime: Date.now(), endTimeStr: new Date().toLocaleString('ar-EG'), durationMin, cost, status: 'ended' };
+    
+    // حساب الدقائق الفعلية
+    const durationMinActual = Math.ceil((Date.now() - session.startTime) / 60000);
+    // التقريب لأقرب ربع ساعة (15 دقيقة) للحساب المالي
+    const roundedMin = Math.ceil(durationMinActual / 15) * 15;
+    const cost = (roundedMin / 60) * (device.hourlyRate || 0);
+
+    const endedSession = { 
+      ...session, 
+      endTime: Date.now(), 
+      endTimeStr: new Date().toLocaleString('ar-EG'), 
+      durationMin: roundedMin, 
+      actualMin: durationMinActual, 
+      cost, 
+      status: 'ended' 
+    };
+    
     const newSessions = psSessions.map(s => s.id === sessionId ? endedSession : s);
     setField('psSessions', newSessions);
+    
     let updates = { psSessions: newSessions };
     if (cost > 0) {
       const psOrder = {
         id: Date.now(),
-        items: [{ id: 'ps_device', name: `${device.name} - ${durationMin} دقيقة`, price: cost, quantity: 1 }],
+        items: [{ id: 'ps_device', name: `${device.name} - ${roundedMin} دقيقة`, price: cost, quantity: 1 }],
         subtotal: cost, discountAmount: 0, tax: 0, total: cost,
         date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
         note: `بلايستيشن - ${device.name}`,
@@ -564,7 +601,7 @@ export default function App() {
       updates.orders = newOrders;
     }
     syncToCloud(updates);
-    showToast(`تم إنهاء الجلسة بتكلفة ${cost} ج`, 'success');
+    showToast(`تم إنهاء الجلسة بتكلفة ${cost.toFixed(2)} ج`, 'success');
   }, [psSessions, psDevices, orders, activeShift, currentUser, setField, syncToCloud, showToast]);
 
   // ========== POS Logic ==========
@@ -697,7 +734,21 @@ export default function App() {
     );
   }
 
-  // ========== MAIN RETURN — single return for all app states ==========
+  // تحديد القوائم الجانبية المسموحة حسب الرتبة
+  const navItems = [
+    { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة', roles: ['admin'] },
+    { id: 'reports', icon: <FileText size={19} />, label: 'التقارير', roles: ['admin'] },
+    { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
+    { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
+    { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
+    { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin'] },
+    { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
+    { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] },
+    { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
+    { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
+  ].filter(item => item.roles.includes(currentUser?.role));
+
+  // ========== MAIN RETURN ==========
   return (
     <ErrorBoundary>
       <div className={isDarkMode ? 'dark' : ''}>
@@ -734,10 +785,6 @@ export default function App() {
             <span className={`relative inline-flex rounded-full h-2 w-2 ${!isOnline || syncStatus === 'error' ? 'bg-rose-300' : 'bg-white'}`} />
           </span>
         </div>
-
-        {/* ========================================
-            SCREEN ROUTING
-            ======================================== */}
 
         {!currentUser ? (
           /* ===== Login Screen ===== */
@@ -907,8 +954,8 @@ export default function App() {
           /* ===== Employee / Admin Main Interface ===== */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden w-full pt-7">
 
-            {/* ===== Sidebar (Admin only) ===== */}
-            {currentUser.role === 'admin' && (
+            {/* Sidebar for Admin and Cashier */}
+            {(currentUser.role === 'admin' || currentUser.role === 'cashier') && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileMenuOpen', false)} />}
                 <div className={`fixed inset-y-0 right-0 z-50 transform ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"} lg:relative lg:translate-x-0 transition-transform duration-300 w-64 md:w-72 bg-white dark:bg-slate-900 flex flex-col shrink-0 pt-7 border-l border-slate-200 dark:border-slate-800 shadow-xl lg:shadow-none`}>
@@ -920,18 +967,7 @@ export default function App() {
                     <button onClick={() => setField('isMobileMenuOpen', false)} className="lg:hidden text-slate-500 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18} /></button>
                   </div>
                   <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-                    {[
-                      { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة' },
-                      { id: 'reports', icon: <FileText size={19} />, label: 'التقارير' },
-                      { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات' },
-                      { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام' },
-                      { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات' },
-                      { id: 'offers', icon: <Tag size={19} />, label: 'العروض' },
-                      { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة' },
-                      { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن' },
-                      { id: 'hr', icon: <Users size={19} />, label: 'الرواتب' },
-                      { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات' },
-                    ].map(item => (
+                    {navItems.map(item => (
                       <button key={item.id} onClick={() => { setField('currentRoute', item.id); setField('isMobileMenuOpen', false); }}
                         className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold transition-all text-sm ${currentRoute === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-white'}`}>
                         {item.icon} {item.label}
@@ -945,13 +981,15 @@ export default function App() {
                     </button>
                   </nav>
                   <div className="p-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
-                    <div className="flex items-center justify-between mb-2 px-1">
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الضريبة (14%)</span>
-                      <button onClick={() => { const v = !isTaxEnabled; setField('isTaxEnabled', v); syncToCloud({ isTaxEnabled: v }); }}
-                        className={`w-12 h-6 rounded-full transition-colors relative ${isTaxEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
-                        <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isTaxEnabled ? 'left-7' : 'left-1'}`} />
-                      </button>
-                    </div>
+                    {currentUser.role === 'admin' && (
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الضريبة (14%)</span>
+                        <button onClick={() => { const v = !isTaxEnabled; setField('isTaxEnabled', v); syncToCloud({ isTaxEnabled: v }); }}
+                          className={`w-12 h-6 rounded-full transition-colors relative ${isTaxEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                          <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isTaxEnabled ? 'left-7' : 'left-1'}`} />
+                        </button>
+                      </div>
+                    )}
                     <button onClick={handleLogout} className="w-full flex justify-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-600 hover:text-white font-bold transition-colors text-sm">
                       <LogOut size={18} /> تسجيل خروج
                     </button>
@@ -965,7 +1003,7 @@ export default function App() {
               {/* Header */}
               <header className="p-3 md:p-4 md:px-8 flex justify-between items-center shadow-sm z-30 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  {currentUser.role === 'admin' && <button onClick={() => setField('isMobileMenuOpen', true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19} /></button>}
+                  {(currentUser.role === 'admin' || currentUser.role === 'cashier') && <button onClick={() => setField('isMobileMenuOpen', true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19} /></button>}
                   <h1 className="font-black text-sm md:text-xl truncate max-w-[160px] md:max-w-none text-slate-800 dark:text-white">
                     {currentUser.role === 'super_admin' ? (globalSettings.appName || 'المنصة') : currentUser.role === 'cashier' ? `كاشير — ${currentUser.cafeName}` : currentUser.cafeName}
                   </h1>
@@ -1049,7 +1087,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'pos' || currentUser.role === 'cashier' ? (
+                ) : currentRoute === 'pos' ? (
                   /* ===== POS ===== */
                   <div className="flex flex-col lg:flex-row h-full p-2 md:p-4 lg:p-6 gap-4 lg:gap-6 overflow-hidden relative">
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden pb-16 lg:pb-0">
@@ -1099,6 +1137,7 @@ export default function App() {
                             </button>
                           );
                         })}
+                        {products.length === 0 && <div className="col-span-full mt-10 text-center text-slate-400"><Coffee className="w-12 h-12 mx-auto mb-2 opacity-30" /><p className="font-bold text-sm">لا توجد منتجات مضافة بعد</p></div>}
                       </div>
                     </div>
 
@@ -1189,7 +1228,7 @@ export default function App() {
                     {isMobileCartOpen && <div className="fixed inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileCartOpen', false)} />}
                   </div>
 
-                ) : currentRoute === 'dashboard' ? (
+                ) : currentRoute === 'dashboard' && currentUser.role === 'admin' ? (
                   /* ===== Dashboard ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -1217,7 +1256,7 @@ export default function App() {
                     )}
                   </div>
 
-                ) : currentRoute === 'reports' ? (
+                ) : currentRoute === 'reports' && currentUser.role === 'admin' ? (
                   /* ===== Reports ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
                     <div className="flex items-center gap-3 mb-2"><FileText className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">التقارير والتصدير</h2></div>
@@ -1263,7 +1302,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'shifts' ? (
+                ) : currentRoute === 'shifts' && currentUser.role === 'admin' ? (
                   /* ===== Shifts ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">سجل الورديات</h2></div>
@@ -1297,7 +1336,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'inventory' ? (
+                ) : currentRoute === 'inventory' && currentUser.role === 'admin' ? (
                   /* ===== Inventory ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1327,7 +1366,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'products' ? (
+                ) : currentRoute === 'products' && currentUser.role === 'admin' ? (
                   /* ===== Products ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1361,7 +1400,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'offers' ? (
+                ) : currentRoute === 'offers' && currentUser.role === 'admin' ? (
                   /* ===== Offers ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1400,25 +1439,34 @@ export default function App() {
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Gamepad2 className="text-indigo-500 w-8 h-8" /> بلايستيشن</h2>
-                      <button onClick={() => openModal('psDevice')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> إضافة جهاز</button>
+                      {/* الزرار ده هيظهر للمدير فقط */}
+                      {currentUser.role === 'admin' && (
+                        <button onClick={() => openModal('psDevice')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> إضافة جهاز</button>
+                      )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
                       {psDevices.length === 0 ? (
-                        <div className="col-span-full text-center py-16 text-slate-400"><Gamepad2 className="w-16 h-16 mx-auto mb-4 opacity-20" /><p className="font-bold">لا توجد أجهزة</p></div>
+                        <div className="col-span-full text-center py-16 text-slate-400"><Gamepad2 className="w-16 h-16 mx-auto mb-4 opacity-20" /><p className="font-bold">لا توجد أجهزة مضافة</p></div>
                       ) : psDevices.map(device => {
                         const aS = psSessions.find(s => s.deviceId === device.id && s.status === 'active');
                         const durMin = aS ? Math.floor((Date.now() - aS.startTime) / 60000) : 0;
-                        const cost = aS ? Math.ceil(durMin / 60) * device.hourlyRate : 0;
+                        const cost = aS ? (Math.ceil(durMin / 15) * 15 / 60) * device.hourlyRate : 0; // حسبة العرض المباشر (15 دقيقة تقريب)
                         return (
                           <div key={device.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${aS ? 'border-emerald-400 dark:border-emerald-600' : 'border-slate-200 dark:border-slate-700'}`}>
                             <div className="flex justify-between items-start mb-4"><div><h3 className="font-black text-xl text-slate-800 dark:text-white">{device.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold text-sm mt-1">{device.hourlyRate} ج / ساعة</p></div><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${aS ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{aS ? 'شغال' : 'فاضي'}</span></div>
-                            {aS && <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 mb-4 space-y-1"><p className="text-xs font-bold text-emerald-700">بدأ: {aS.startTimeStr}</p><p className="text-xs font-bold text-emerald-700">المدة: {durMin} دقيقة</p><p className="text-base font-black text-emerald-600">التكلفة: {cost} ج</p></div>}
+                            {aS && <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 mb-4 space-y-1"><p className="text-xs font-bold text-emerald-700">بدأ: {aS.startTimeStr}</p><p className="text-xs font-bold text-emerald-700">المدة الفعلية: {durMin} دقيقة</p><p className="text-base font-black text-emerald-600">التكلفة (تقريب لربع ساعة): {cost.toFixed(2)} ج</p></div>}
                             {aS ? (
                               <button onClick={() => endPsSession(aS.id)} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Power size={16} /> إنهاء وإصدار فاتورة</button>
                             ) : (
-                              <button onClick={() => startPsSession(device.id)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Play size={16} /> بدء جلسة</button>
+                              <button onClick={() => {
+                                if (currentUser.role === 'cashier' && !activeShift) { showToast('يجب استلام عهدة أولاً لبدء الجلسات!', 'error'); return; }
+                                startPsSession(device.id);
+                              }} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Play size={16} /> بدء جلسة</button>
                             )}
-                            <button onClick={() => setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' })} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
+                            {/* حذف الجهاز متاح للمدير فقط */}
+                            {currentUser.role === 'admin' && (
+                              <button onClick={() => setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' })} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
+                            )}
                           </div>
                         );
                       })}
@@ -1429,7 +1477,7 @@ export default function App() {
                         <div className="overflow-x-auto custom-scrollbar">
                           <table className="w-full text-right min-w-[600px]">
                             <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold text-sm">
-                              <tr><th className="p-4">الجهاز</th><th className="p-4">الكاشير</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4 text-center">المدة</th><th className="p-4 text-center">التكلفة</th></tr>
+                              <tr><th className="p-4">الجهاز</th><th className="p-4">الكاشير</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4 text-center">المدة المحسوبة</th><th className="p-4 text-center">التكلفة</th></tr>
                             </thead>
                             <tbody>
                               {[...psSessions.filter(s => s.status === 'ended')].reverse().slice(0, 20).map(s => (
@@ -1438,8 +1486,8 @@ export default function App() {
                                   <td className="p-4 text-slate-500">{s.cashierName}</td>
                                   <td className="p-4 text-xs text-slate-500">{s.startTimeStr}</td>
                                   <td className="p-4 text-xs text-slate-500">{s.endTimeStr}</td>
-                                  <td className="p-4 text-center font-bold">{s.durationMin} د</td>
-                                  <td className="p-4 text-center font-black text-indigo-600">{s.cost} ج</td>
+                                  <td className="p-4 text-center font-bold">{s.durationMin} دقيقة</td>
+                                  <td className="p-4 text-center font-black text-indigo-600">{s.cost.toFixed(2)} ج</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1449,7 +1497,7 @@ export default function App() {
                     )}
                   </div>
 
-                ) : currentRoute === 'tables' ? (
+                ) : currentRoute === 'tables' && currentUser.role === 'admin' ? (
                   /* ===== Tables ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1468,7 +1516,7 @@ export default function App() {
                     </div>
                   </div>
 
-                ) : currentRoute === 'hr' ? (
+                ) : currentRoute === 'hr' && currentUser.role === 'admin' ? (
                   /* ===== HR ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1537,7 +1585,7 @@ export default function App() {
                     })()}
                   </div>
 
-                ) : currentRoute === 'expenses' ? (
+                ) : currentRoute === 'expenses' && currentUser.role === 'admin' ? (
                   /* ===== Expenses ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
@@ -1610,16 +1658,29 @@ export default function App() {
               </CustomModal>
             )}
 
+            {/* تم تغيير مودال المنتجات لرفع الصورة من الجهاز */}
             {activeModal === 'product' && (
               <CustomModal title="إضافة صنف" onClose={closeModal}>
-                <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: e.target.image.value || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: formData.image || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
+                  
+                  <div className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors overflow-hidden">
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                    {formData.image ? (
+                      <img src={formData.image} alt="preview" className="h-20 object-contain rounded-lg shadow-sm" />
+                    ) : (
+                      <>
+                        <ImageIcon className="text-slate-400 w-8 h-8" />
+                        <span className="text-xs font-bold text-slate-500">اضغط لاختيار صورة (اختياري)</span>
+                      </>
+                    )}
+                  </div>
+
                   <input required name="pname" value={formData.pname || formData.name || ''} onChange={e => setState({ formData: { ...formData, pname: e.target.value, name: e.target.value } })} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm" />
                   <div className="grid grid-cols-2 gap-4">
                     <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm" />
                     <input required type="number" step="any" name="price" value={formData.price || ''} onChange={handleFormChange} placeholder="السعر" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-black text-indigo-600 dark:text-indigo-400 text-sm" />
                   </div>
                   <div><label className="block text-xs font-black mb-1.5 text-slate-600 dark:text-slate-400 flex items-center gap-1"><Calendar size={12} /> تاريخ الصلاحية (اختياري)</label><input type="date" name="expiryDate" value={formData.expiryDate || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm" /></div>
-                  <div className="relative"><ImageIcon className="absolute left-4 top-4 text-slate-400 w-4 h-4" /><input name="image" value={formData.image || ''} onChange={handleFormChange} placeholder="رابط الصورة (اختياري)" className="w-full p-4 pl-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-left text-slate-800 dark:text-white text-xs" dir="ltr" /></div>
                   <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
                     <div className="flex justify-between items-center mb-4"><label className="text-sm font-black dark:text-white">الوصفة</label><button type="button" onClick={() => setState({ formData: { ...formData, recipe: [...(formData.recipe || []), { materialId: '', amount: '' }] } })} className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-2 rounded-lg font-bold">+ مكون</button></div>
                     <div className="space-y-2 max-h-40 overflow-auto custom-scrollbar">

@@ -9,56 +9,61 @@ import {
   Settings, Store, Bell, Tag, Gift, Gamepad2, Download, Calendar, AlertTriangle,
   User, Mail, Lock, Upload
 } from 'lucide-react';
+
+/* --- بداية: بدائل مضمنة لملفاتك المحلية لكي يعمل الكود في هذه البيئة المعزولة --- */
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, sendSignInLinkToEmail } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// إعداد Firebase للعمل في بيئة الملف الواحد
-let app, auth, db;
-try {
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "dummy" };
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) {
-  console.warn("Firebase not initialized in preview");
-}
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "dummy" };
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-// --- دمج المكونات الخارجية محلياً لتفادي أخطاء الاستدعاء ---
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(error) { return { hasError: true }; }
-  render() { if (this.state.hasError) return <div className="p-4 text-center">حدث خطأ في العرض.</div>; return this.props.children; }
+  render() { if (this.state.hasError) return <div className="p-4 text-center text-rose-500 font-bold">حدث خطأ غير متوقع.</div>; return this.props.children; }
 }
 
 const CustomModal = ({ title, onClose, children }) => (
-  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4" dir="rtl">
-    <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar">
+  <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" dir="rtl">
+    <div className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative custom-scrollbar border border-slate-200 dark:border-slate-700">
       <div className="flex justify-between items-center mb-5 border-b border-slate-100 dark:border-slate-700 pb-3">
         <h2 className="text-xl font-black text-slate-800 dark:text-white">{title}</h2>
-        <button onClick={onClose} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hover:text-rose-500"><X size={18} /></button>
+        <button onClick={onClose} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hover:text-rose-500 transition-colors"><X size={18} /></button>
       </div>
       {children}
     </div>
   </div>
 );
 
-const SafeNumberInput = ({ value, onSave, colorClass }) => {
-  const [val, setVal] = useState(value);
-  useEffect(() => { setVal(value); }, [value]);
-  return <input type="number" step="any" value={val} onChange={e => setVal(e.target.value)} onBlur={() => onSave(parseFloat(val) || 0)} className={`w-full p-2 border-2 rounded-xl outline-none font-black text-sm text-center transition-colors ${colorClass}`} />;
-};
-
-const exportReportPDF = () => toast.success('تم التصدير بنجاح (وضع المعاينة)');
-const exportEmployeeReportPDF = () => toast.success('تم تصدير تقرير الموظف (وضع المعاينة)');
-const AuthHandler = ({ onLoginSuccess }) => <div className="p-10 text-center font-bold">جاري المصادقة...</div>;
-// -----------------------------------------------------------
+const exportReportPDF = () => toast.success('تم التصدير بنجاح (معاينة)');
+const exportEmployeeReportPDF = () => toast.success('تم تصدير التقرير بنجاح (معاينة)');
+const AuthHandler = () => <div className="p-10 text-center font-bold">جاري المصادقة...</div>;
+/* --- نهاية البدائل المضمنة (يمكنك لاحقاً استبدالها بملفات مشروعك) --- */
 
 const OWNER_EMAIL = 'owner@coffeeerp.app';
 const STOCK_ALERT_THRESHOLD = 50;
 const TAX_RATE = 0.14;
 
 const defaultProducts = [];
+
+// مكون داخلي آمن لتعديل الأرقام مباشرة (Inline Edit)
+const InlineSafeInput = ({ value, onSave, colorClass }) => {
+  const [val, setVal] = useState(value);
+  useEffect(() => { setVal(value); }, [value]);
+  return (
+    <input 
+      type="number" 
+      step="any" 
+      value={val} 
+      onChange={e => setVal(e.target.value)} 
+      onBlur={() => onSave(parseFloat(val) || 0)} 
+      className={`w-full p-2 border-2 rounded-xl outline-none font-black text-sm text-center transition-colors ${colorClass}`} 
+    />
+  );
+};
 
 // ========== Reducer ==========
 const initialState = {
@@ -83,7 +88,7 @@ const initialState = {
   emailLinkLoading: false,
   emailLinkError: '',
   globalSettings: { appName: 'كوفي سحابة' },
-  tenants: [{ id: 'c1', name: 'كوفي سكول - فرع 1', status: 'active', subscriptionEnds: '2026-12-31', adminEmail: 'admin.c1@coffeeerp.app', cashierEmail: 'cashier.c1@coffeeerp.app' }],
+  tenants: [],
   rawMaterials: [],
   products: defaultProducts,
   employees: [],
@@ -661,9 +666,9 @@ export default function App() {
     { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
     { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
     { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
-    { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin', 'cashier'] },
+    { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin', 'cashier'] }, // <- متاح للكاشير
     { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
-    { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] },
+    { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] }, // <- متاح للكاشير
     { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
     { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
   ];
@@ -902,15 +907,14 @@ export default function App() {
               </header>
 
               <div className="flex-1 overflow-auto custom-scrollbar relative">
-
-                {/* ===== CASHIER SHIFT GATE ===== */}
+                {/* شجرة عرض المحتوى المنظمة والمحمية من التكرار */}
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
+                  /* ===== CASHIER SHIFT GATE ===== */
                   <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
                     <div className="bg-white dark:bg-slate-800 p-6 md:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
                       <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-5"><Play className="w-10 h-10" /></div>
                       <h2 className="text-2xl font-black mb-2 dark:text-white">أهلاً بك</h2>
                       <p className="text-slate-500 dark:text-slate-400 mb-7 font-bold text-sm">لتبدأ البيع، يجب فتح شيفت واستلام العهدة.</p>
-                      {/* عرض الشيفتات المفتوحة لو موجودة لنفس الكاشير (للتشخيص) */}
                       {shifts.filter(s => s.status === 'open').length > 0 && (
                         <div className="mb-5 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 text-right">
                           <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-2">⚠️ يوجد شيفت مفتوح لكاشير آخر:</p>
@@ -924,7 +928,7 @@ export default function App() {
                         const startingCash = parseFloat(e.target.startingCash.value) || 0;
                         const newShift = {
                           id: 'sh_' + Date.now(),
-                          cashierName: currentUser.name.trim(), // trim() عشان نتجنب مشكلة المسافات
+                          cashierName: currentUser.name.trim(),
                           cafeId: currentUser.cafeId,
                           startTime: new Date().toLocaleString('ar-EG'),
                           timestamp: Date.now(),
@@ -948,7 +952,7 @@ export default function App() {
                 ) : currentUser.role === 'super_admin' ? (
                   /* ===== SUPER ADMIN ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
-                    {/* ===== إدارة العملاء ===== */}
+                    {/* إدارة العملاء */}
                     <div>
                       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                         <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة</h2></div>
@@ -981,50 +985,21 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* ===== رفع المنيو لكافيه ===== */}
+                    {/* رفع المنيو لكافيه */}
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20">
                         <Coffee className="text-indigo-600 w-6 h-6" />
                         <h3 className="font-black text-xl text-slate-800 dark:text-white">رفع المنيو والمواد الخام لكافيه</h3>
                       </div>
                       <div className="p-6">
-                        {/* شرح الخطوات */}
                         <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800 space-y-2">
                           <p className="font-black text-amber-800 dark:text-amber-300 text-sm">📋 خطوات الرفع:</p>
                           <p className="text-xs font-bold text-amber-700 dark:text-amber-400">١. اختر الكافيه المستهدف</p>
                           <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٢. الصق بيانات المواد الخام بصيغة JSON (اختياري)</p>
                           <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٣. الصق بيانات المنتجات بصيغة JSON (مع الريسيبي)</p>
                           <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٤. اضغط رفع — سيتم الحفظ مباشرة في Firebase</p>
-                          <details className="mt-2">
-                            <summary className="text-xs font-black text-amber-800 dark:text-amber-300 cursor-pointer">📄 مثال صيغة JSON (اضغط للعرض)</summary>
-                            <div className="mt-2 space-y-3">
-                              <div>
-                                <p className="text-xs font-black text-amber-700 mb-1">مواد خام:</p>
-                                <pre className="text-[10px] bg-white dark:bg-slate-900 p-2 rounded-lg overflow-x-auto text-slate-700 dark:text-slate-300 border border-amber-200">{`[
-  {"id":"rm_1","name":"قهوة عربية","unit":"جرام","currentStock":1000,"costPerUnit":0.5},
-  {"id":"rm_2","name":"حليب","unit":"مللي","currentStock":5000,"costPerUnit":0.02}
-]`}</pre>
-                              </div>
-                              <div>
-                                <p className="text-xs font-black text-amber-700 mb-1">منتجات (مع ريسيبي):</p>
-                                <pre className="text-[10px] bg-white dark:bg-slate-900 p-2 rounded-lg overflow-x-auto text-slate-700 dark:text-slate-300 border border-amber-200">{`[
-  {
-    "id":"prod_1",
-    "name":"قهوة تركي",
-    "category":"قهوة",
-    "price":25,
-    "recipe":[
-      {"materialId":"rm_1","amount":15},
-      {"materialId":"rm_2","amount":100}
-    ]
-  }
-]`}</pre>
-                              </div>
-                            </div>
-                          </details>
                         </div>
 
-                        {/* Form الرفع */}
                         {(() => {
                           const uploadCafeId = formData._uploadCafeId || '';
                           const uploadMaterials = formData._uploadMaterials || '';
@@ -1042,7 +1017,6 @@ export default function App() {
                               let parsedMaterials = null;
                               let parsedProducts = null;
 
-                              // parse المواد الخام
                               if (uploadMaterials.trim()) {
                                 try {
                                   parsedMaterials = JSON.parse(uploadMaterials.trim());
@@ -1059,7 +1033,6 @@ export default function App() {
                                 }
                               }
 
-                              // parse المنتجات
                               if (uploadProducts.trim()) {
                                 try {
                                   parsedProducts = JSON.parse(uploadProducts.trim());
@@ -1070,27 +1043,18 @@ export default function App() {
                                     if (!p.price) throw new Error(`المنتج ${i+1}: حقل price مطلوب`);
                                     if (!p.category) p.category = 'عام';
                                     if (!p.recipe) p.recipe = [];
-                                    p.recipe.forEach((r, ri) => {
-                                      if (!r.materialId) throw new Error(`منتج "${p.name}" — مكون ${ri+1}: materialId مطلوب`);
-                                      if (!r.amount) throw new Error(`منتج "${p.name}" — مكون ${ri+1}: amount مطلوب`);
-                                    });
                                   });
                                 } catch (e) {
                                   throw new Error(`خطأ في JSON المنتجات: ${e.message}`);
                                 }
                               }
 
-                              // الرفع لـ Firebase
                               const updateData = {};
                               if (parsedMaterials) updateData.rawMaterials = parsedMaterials;
                               if (parsedProducts) updateData.products = parsedProducts;
                               updateData.lastUpdated = new Date().toISOString();
 
-                              await setDoc(
-                                doc(db, 'coffee_erp_cafes', uploadCafeId),
-                                updateData,
-                                { merge: true }
-                              );
+                              await setDoc(doc(db, 'coffee_erp_cafes', uploadCafeId), updateData, { merge: true });
 
                               setState({ formData: {
                                 ...stateRef.current.formData,
@@ -1099,7 +1063,7 @@ export default function App() {
                                 _uploadMaterials: '',
                                 _uploadProducts: ''
                               }});
-                              showToast(`✅ تم رفع المنيو بنجاح إلى ${tenants.find(t=>t.id===uploadCafeId)?.name || uploadCafeId}`, 'success');
+                              showToast(`✅ تم الرفع بنجاح`, 'success');
 
                             } catch (err) {
                               setState({ formData: { ...stateRef.current.formData, _uploadStatus: 'error', _uploadError: err.message } });
@@ -1108,7 +1072,6 @@ export default function App() {
 
                           return (
                             <div className="space-y-5">
-                              {/* اختيار الكافيه */}
                               <div>
                                 <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300">الكافيه المستهدف</label>
                                 <select
@@ -1123,7 +1086,6 @@ export default function App() {
                                 </select>
                               </div>
 
-                              {/* مواد خام JSON */}
                               <div>
                                 <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
                                   <Package size={15} className="text-indigo-500" /> المواد الخام (JSON) — اختياري
@@ -1138,7 +1100,6 @@ export default function App() {
                                 />
                               </div>
 
-                              {/* منتجات JSON */}
                               <div>
                                 <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
                                   <Coffee size={15} className="text-indigo-500" /> المنتجات والريسيبي (JSON) — اختياري
@@ -1146,14 +1107,13 @@ export default function App() {
                                 <textarea
                                   value={uploadProducts}
                                   onChange={e => setState({ formData: { ...stateRef.current.formData, _uploadProducts: e.target.value, _uploadStatus: '', _uploadError: '' } })}
-                                  placeholder='[{"id":"prod_1","name":"قهوة تركي","category":"قهوة","price":25,"recipe":[{"materialId":"rm_1","amount":15}]}]'
+                                  placeholder='[{"name":"قهوة تركي","category":"قهوة","price":25,"recipe":[{"materialId":"rm_1","amount":15}]}]'
                                   rows={7}
                                   className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-indigo-500 resize-y"
                                   dir="ltr"
                                 />
                               </div>
 
-                              {/* رسالة الخطأ */}
                               {uploadError && (
                                 <div className="p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl flex items-start gap-3">
                                   <AlertCircle className="text-rose-500 w-5 h-5 shrink-0 mt-0.5" />
@@ -1161,15 +1121,13 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* رسالة النجاح */}
                               {uploadStatus === 'success' && (
                                 <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-3">
                                   <Wifi className="text-emerald-500 w-5 h-5" />
-                                  <p className="text-emerald-700 dark:text-emerald-400 text-sm font-black">✅ تم الرفع بنجاح! سيظهر التحديث فوراً عند الكافيه.</p>
+                                  <p className="text-emerald-700 dark:text-emerald-400 text-sm font-black">✅ تم الرفع بنجاح!</p>
                                 </div>
                               )}
 
-                              {/* زر الرفع */}
                               <button
                                 onClick={handleUpload}
                                 disabled={uploadStatus === 'uploading' || !uploadCafeId}
@@ -1448,22 +1406,18 @@ export default function App() {
                           <tbody>
                             {rawMaterials.map(rm => (
                               <tr key={rm.id} className={`border-b border-slate-100 dark:border-slate-700 text-sm ${rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
-                                {/* اسم المادة */}
                                 <td className="p-4 font-black text-slate-800 dark:text-white">
                                   <div className="flex items-center gap-2">
                                     {rm.currentStock <= STOCK_ALERT_THRESHOLD && <Bell size={13} className="text-rose-500 shrink-0" />}
                                     {rm.name}
                                   </div>
                                 </td>
-                                {/* الوحدة */}
                                 <td className="p-4 text-slate-500 dark:text-slate-400 font-bold">{rm.unit}</td>
-                                {/* الكمية الحالية — badge ملوّن */}
                                 <td className="p-4 text-center">
                                   <span className={`px-3 py-1.5 rounded-xl font-black text-xs ${rm.currentStock <= 0 ? 'bg-red-100 text-red-700' : rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                     {rm.currentStock}
                                   </span>
                                 </td>
-                                {/* ✏️ تعديل الكمية inline (باستخدام SafeNumberInput لضمان الحفظ الموثوق) */}
                                 <td className="p-2 text-center">
                                   <div className="flex items-center justify-center gap-1">
                                     <button
@@ -1477,7 +1431,7 @@ export default function App() {
                                     >−</button>
                                     
                                     <div className="w-20">
-                                      <SafeNumberInput
+                                      <InlineSafeInput
                                         value={rm.currentStock}
                                         onSave={v => {
                                           const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, currentStock: Math.max(0, v) } : r);
@@ -1499,9 +1453,8 @@ export default function App() {
                                     >+</button>
                                   </div>
                                 </td>
-                                {/* تعديل التكلفة inline */}
                                 <td className="p-2 text-center">
-                                  <SafeNumberInput
+                                  <InlineSafeInput
                                     value={rm.costPerUnit}
                                     onSave={v => {
                                       const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, costPerUnit: v } : r);
@@ -1511,7 +1464,6 @@ export default function App() {
                                     colorClass="text-indigo-600 focus:border-indigo-500 border-indigo-100 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-800"
                                   />
                                 </td>
-                                {/* حذف */}
                                 <td className="p-4 text-center">
                                   <button onClick={() => setState({ deleteConfig: { type: 'material', id: rm.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button>
                                 </td>
@@ -1617,7 +1569,6 @@ export default function App() {
                       ) : psDevices.map(device => {
                         const aS = psSessions.find(s => s.deviceId === device.id && s.status === 'active');
                         const durMin = aS ? Math.floor((Date.now() - aS.startTime) / 60000) : 0;
-                        // عرض تكلفة تقريبية بالربع ساعة لحظياً
                         const displayCost = aS ? (Math.ceil(Math.max(durMin, 1) / 15) * 15 / 60) * device.hourlyRate : 0;
                         return (
                           <div key={device.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${aS ? 'border-emerald-400 dark:border-emerald-600' : 'border-slate-200 dark:border-slate-700'}`}>
@@ -1716,8 +1667,8 @@ export default function App() {
                               <tr key={emp.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
                                 <td className="p-5 font-black text-slate-800 dark:text-white text-base">{emp.name}</td>
                                 <td className="p-5 font-bold text-slate-600 dark:text-slate-300">{emp.salary} ج</td>
-                                <td className="p-2"><SafeNumberInput value={emp.advances} onSave={(v) => genericSave('employees', employees, { advances: v, id: emp.id })} colorClass="text-amber-500 focus:border-amber-500 border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800" /></td>
-                                <td className="p-2"><SafeNumberInput value={emp.deductions} onSave={(v) => genericSave('employees', employees, { deductions: v, id: emp.id })} colorClass="text-rose-500 focus:border-rose-500 border-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800" /></td>
+                                <td className="p-2"><InlineSafeInput value={emp.advances} onSave={(v) => genericSave('employees', employees, { advances: v, id: emp.id })} colorClass="text-amber-500 focus:border-amber-500 border-amber-100 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800" /></td>
+                                <td className="p-2"><InlineSafeInput value={emp.deductions} onSave={(v) => genericSave('employees', employees, { deductions: v, id: emp.id })} colorClass="text-rose-500 focus:border-rose-500 border-rose-100 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800" /></td>
                                 <td className="p-5 text-center font-black text-emerald-600 dark:text-emerald-400 text-base">{emp.salary - (parseFloat(emp.advances) || 0) - (parseFloat(emp.deductions) || 0)} ج</td>
                                 <td className="p-5 text-center"><button onClick={() => setField('selectedEmployeeReport', emp)} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 mx-auto"><User size={12} /> تفاصيل</button></td>
                                 <td className="p-5 text-center"><button onClick={() => setState({ deleteConfig: { type: 'employee', id: emp.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>

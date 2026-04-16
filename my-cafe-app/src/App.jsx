@@ -7,7 +7,7 @@ import {
   Menu, Building2, Utensils, Armchair, Save, AlertCircle, Loader2, WifiOff,
   RefreshCw, Wifi, ClipboardList, Play, Power, ShieldAlert, Image as ImageIcon,
   Settings, Store, Bell, Tag, Gift, Gamepad2, Download, Calendar, AlertTriangle,
-  User, Mail, Lock
+  User, Mail, Lock, Upload
 } from 'lucide-react';
 import { auth, db, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut, sendSignInLinkToEmail } from './firebase';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -339,7 +339,11 @@ export default function App() {
 
   const activeShift = useMemo(() => {
     if (!currentUser) return null;
-    return shifts.find(s => s.status === 'open' && s.cashierName === currentUser.name);
+    // مطابقة بالاسم مع trim() لتجنب مشكلة المسافات
+    return shifts.find(s =>
+      s.status === 'open' &&
+      s.cashierName?.trim() === currentUser.name?.trim()
+    );
   }, [shifts, currentUser]);
 
   const getProductPriceWithOffer = useCallback((product) => {
@@ -864,10 +868,27 @@ export default function App() {
                       <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-5"><Play className="w-10 h-10" /></div>
                       <h2 className="text-2xl font-black mb-2 dark:text-white">أهلاً بك</h2>
                       <p className="text-slate-500 dark:text-slate-400 mb-7 font-bold text-sm">لتبدأ البيع، يجب فتح شيفت واستلام العهدة.</p>
+                      {/* عرض الشيفتات المفتوحة لو موجودة لنفس الكاشير (للتشخيص) */}
+                      {shifts.filter(s => s.status === 'open').length > 0 && (
+                        <div className="mb-5 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 text-right">
+                          <p className="text-xs font-black text-amber-700 dark:text-amber-400 mb-2">⚠️ يوجد شيفت مفتوح لكاشير آخر:</p>
+                          {shifts.filter(s => s.status === 'open').map(s => (
+                            <p key={s.id} className="text-xs text-amber-600 font-bold">• {s.cashierName} — {s.startTime}</p>
+                          ))}
+                        </div>
+                      )}
                       <form onSubmit={(e) => {
                         e.preventDefault();
                         const startingCash = parseFloat(e.target.startingCash.value) || 0;
-                        const newShift = { id: 'sh_' + Date.now(), cashierName: currentUser.name, startTime: new Date().toLocaleString('ar-EG'), timestamp: Date.now(), startingCash, status: 'open' };
+                        const newShift = {
+                          id: 'sh_' + Date.now(),
+                          cashierName: currentUser.name.trim(), // trim() عشان نتجنب مشكلة المسافات
+                          cafeId: currentUser.cafeId,
+                          startTime: new Date().toLocaleString('ar-EG'),
+                          timestamp: Date.now(),
+                          startingCash,
+                          status: 'open'
+                        };
                         const newShifts = [...shifts, newShift];
                         setField('shifts', newShifts);
                         syncToCloud({ shifts: newShifts });
@@ -884,34 +905,247 @@ export default function App() {
 
                 ) : currentUser.role === 'super_admin' ? (
                   /* ===== SUPER ADMIN ===== */
-                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
-                    <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-                      <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة</h2></div>
-                      <button onClick={() => setState({ formData: { isNew: true }, activeModal: 'tenant' })} className="flex-1 md:flex-none justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Plus size={17} /> عميل جديد</button>
+                  <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
+                    {/* ===== إدارة العملاء ===== */}
+                    <div>
+                      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                        <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة</h2></div>
+                        <button onClick={() => setState({ formData: { isNew: true }, activeModal: 'tenant' })} className="flex-1 md:flex-none justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm"><Plus size={17} /> عميل جديد</button>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <div className="overflow-x-auto custom-scrollbar">
+                          <table className="w-full text-right min-w-[700px]">
+                            <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-bold">
+                              <tr><th className="p-5">كود</th><th className="p-5">الاسم</th><th className="p-5">إيميل المدير</th><th className="p-5">إيميل الكاشير</th><th className="p-5">الانتهاء</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">تحكم</th></tr>
+                            </thead>
+                            <tbody>
+                              {tenants.map(cafe => (
+                                <tr key={cafe.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
+                                  <td className="p-5 font-black text-indigo-600 dark:text-indigo-400">{cafe.id}</td>
+                                  <td className="p-5 font-bold text-slate-800 dark:text-white">{cafe.name}</td>
+                                  <td className="p-5 text-slate-500 text-xs" dir="ltr">{cafe.adminEmail}</td>
+                                  <td className="p-5 text-slate-500 text-xs" dir="ltr">{cafe.cashierEmail}</td>
+                                  <td className="p-5 text-slate-600 dark:text-slate-300">{cafe.subscriptionEnds}</td>
+                                  <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td>
+                                  <td className="p-5 text-center flex justify-center gap-2">
+                                    <button onClick={() => { const newTenants = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setField('tenants', newTenants); syncPlatformToCloud({ tenants: newTenants }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">تبديل</button>
+                                    <button onClick={() => setState({ formData: cafe, activeModal: 'tenant' })} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold">تعديل</button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* ===== رفع المنيو لكافيه ===== */}
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                      <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-right min-w-[700px]">
-                          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-bold">
-                            <tr><th className="p-5">كود</th><th className="p-5">الاسم</th><th className="p-5">إيميل المدير</th><th className="p-5">إيميل الكاشير</th><th className="p-5">الانتهاء</th><th className="p-5 text-center">الحالة</th><th className="p-5 text-center">تحكم</th></tr>
-                          </thead>
-                          <tbody>
-                            {tenants.map(cafe => (
-                              <tr key={cafe.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
-                                <td className="p-5 font-black text-indigo-600 dark:text-indigo-400">{cafe.id}</td>
-                                <td className="p-5 font-bold text-slate-800 dark:text-white">{cafe.name}</td>
-                                <td className="p-5 text-slate-500 text-xs" dir="ltr">{cafe.adminEmail}</td>
-                                <td className="p-5 text-slate-500 text-xs" dir="ltr">{cafe.cashierEmail}</td>
-                                <td className="p-5 text-slate-600 dark:text-slate-300">{cafe.subscriptionEnds}</td>
-                                <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${cafe.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{cafe.status === 'active' ? 'نشط' : 'موقوف'}</span></td>
-                                <td className="p-5 text-center flex justify-center gap-2">
-                                  <button onClick={() => { const newTenants = tenants.map(t => t.id === cafe.id ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' } : t); setField('tenants', newTenants); syncPlatformToCloud({ tenants: newTenants }); }} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">تبديل</button>
-                                  <button onClick={() => setState({ formData: cafe, activeModal: 'tenant' })} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-1.5 rounded-xl text-xs font-bold">تعديل</button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20">
+                        <Coffee className="text-indigo-600 w-6 h-6" />
+                        <h3 className="font-black text-xl text-slate-800 dark:text-white">رفع المنيو والمواد الخام لكافيه</h3>
+                      </div>
+                      <div className="p-6">
+                        {/* شرح الخطوات */}
+                        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800 space-y-2">
+                          <p className="font-black text-amber-800 dark:text-amber-300 text-sm">📋 خطوات الرفع:</p>
+                          <p className="text-xs font-bold text-amber-700 dark:text-amber-400">١. اختر الكافيه المستهدف</p>
+                          <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٢. الصق بيانات المواد الخام بصيغة JSON (اختياري)</p>
+                          <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٣. الصق بيانات المنتجات بصيغة JSON (مع الريسيبي)</p>
+                          <p className="text-xs font-bold text-amber-700 dark:text-amber-400">٤. اضغط رفع — سيتم الحفظ مباشرة في Firebase</p>
+                          <details className="mt-2">
+                            <summary className="text-xs font-black text-amber-800 dark:text-amber-300 cursor-pointer">📄 مثال صيغة JSON (اضغط للعرض)</summary>
+                            <div className="mt-2 space-y-3">
+                              <div>
+                                <p className="text-xs font-black text-amber-700 mb-1">مواد خام:</p>
+                                <pre className="text-[10px] bg-white dark:bg-slate-900 p-2 rounded-lg overflow-x-auto text-slate-700 dark:text-slate-300 border border-amber-200">{`[
+  {"id":"rm_1","name":"قهوة عربية","unit":"جرام","currentStock":1000,"costPerUnit":0.5},
+  {"id":"rm_2","name":"حليب","unit":"مللي","currentStock":5000,"costPerUnit":0.02}
+]`}</pre>
+                              </div>
+                              <div>
+                                <p className="text-xs font-black text-amber-700 mb-1">منتجات (مع ريسيبي):</p>
+                                <pre className="text-[10px] bg-white dark:bg-slate-900 p-2 rounded-lg overflow-x-auto text-slate-700 dark:text-slate-300 border border-amber-200">{`[
+  {
+    "id":"prod_1",
+    "name":"قهوة تركي",
+    "category":"قهوة",
+    "price":25,
+    "recipe":[
+      {"materialId":"rm_1","amount":15},
+      {"materialId":"rm_2","amount":100}
+    ]
+  }
+]`}</pre>
+                              </div>
+                            </div>
+                          </details>
+                        </div>
+
+                        {/* Form الرفع */}
+                        {(() => {
+                          // state محلي داخل الـ IIFE — نستخدم formData عشان مفيش useState هنا
+                          const uploadCafeId = formData._uploadCafeId || '';
+                          const uploadMaterials = formData._uploadMaterials || '';
+                          const uploadProducts = formData._uploadProducts || '';
+                          const uploadStatus = formData._uploadStatus || '';
+                          const uploadError = formData._uploadError || '';
+
+                          const handleUpload = async () => {
+                            if (!uploadCafeId) { setState({ formData: { ...stateRef.current.formData, _uploadError: 'يجب اختيار الكافيه أولاً' } }); return; }
+                            if (!uploadMaterials && !uploadProducts) { setState({ formData: { ...stateRef.current.formData, _uploadError: 'يجب إدخال مواد خام أو منتجات على الأقل' } }); return; }
+
+                            setState({ formData: { ...stateRef.current.formData, _uploadStatus: 'uploading', _uploadError: '' } });
+
+                            try {
+                              let parsedMaterials = null;
+                              let parsedProducts = null;
+
+                              // parse المواد الخام
+                              if (uploadMaterials.trim()) {
+                                try {
+                                  parsedMaterials = JSON.parse(uploadMaterials.trim());
+                                  if (!Array.isArray(parsedMaterials)) throw new Error('يجب أن تكون مصفوفة []');
+                                  // التحقق من الحقول المطلوبة
+                                  parsedMaterials.forEach((rm, i) => {
+                                    if (!rm.id) rm.id = `rm_${Date.now()}_${i}`;
+                                    if (!rm.name) throw new Error(`المادة ${i+1}: حقل name مطلوب`);
+                                    if (!rm.unit) rm.unit = 'جرام';
+                                    if (rm.currentStock === undefined) rm.currentStock = 0;
+                                    if (rm.costPerUnit === undefined) rm.costPerUnit = 0;
+                                  });
+                                } catch (e) {
+                                  throw new Error(`خطأ في JSON المواد الخام: ${e.message}`);
+                                }
+                              }
+
+                              // parse المنتجات
+                              if (uploadProducts.trim()) {
+                                try {
+                                  parsedProducts = JSON.parse(uploadProducts.trim());
+                                  if (!Array.isArray(parsedProducts)) throw new Error('يجب أن تكون مصفوفة []');
+                                  // التحقق من الحقول المطلوبة
+                                  parsedProducts.forEach((p, i) => {
+                                    if (!p.id) p.id = `prod_${Date.now()}_${i}`;
+                                    if (!p.name) throw new Error(`المنتج ${i+1}: حقل name مطلوب`);
+                                    if (!p.price) throw new Error(`المنتج ${i+1}: حقل price مطلوب`);
+                                    if (!p.category) p.category = 'عام';
+                                    if (!p.recipe) p.recipe = [];
+                                    // التحقق من الريسيبي
+                                    p.recipe.forEach((r, ri) => {
+                                      if (!r.materialId) throw new Error(`منتج "${p.name}" — مكون ${ri+1}: materialId مطلوب`);
+                                      if (!r.amount) throw new Error(`منتج "${p.name}" — مكون ${ri+1}: amount مطلوب`);
+                                    });
+                                  });
+                                } catch (e) {
+                                  throw new Error(`خطأ في JSON المنتجات: ${e.message}`);
+                                }
+                              }
+
+                              // الرفع لـ Firebase
+                              const updateData = {};
+                              if (parsedMaterials) updateData.rawMaterials = parsedMaterials;
+                              if (parsedProducts) updateData.products = parsedProducts;
+                              updateData.lastUpdated = new Date().toISOString();
+
+                              await setDoc(
+                                doc(db, 'coffee_erp_cafes', uploadCafeId),
+                                updateData,
+                                { merge: true }
+                              );
+
+                              setState({ formData: {
+                                ...stateRef.current.formData,
+                                _uploadStatus: 'success',
+                                _uploadError: '',
+                                _uploadMaterials: '',
+                                _uploadProducts: ''
+                              }});
+                              showToast(`✅ تم رفع المنيو بنجاح إلى ${tenants.find(t=>t.id===uploadCafeId)?.name || uploadCafeId}`, 'success');
+
+                            } catch (err) {
+                              setState({ formData: { ...stateRef.current.formData, _uploadStatus: 'error', _uploadError: err.message } });
+                            }
+                          };
+
+                          return (
+                            <div className="space-y-5">
+                              {/* اختيار الكافيه */}
+                              <div>
+                                <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300">الكافيه المستهدف</label>
+                                <select
+                                  value={uploadCafeId}
+                                  onChange={e => setState({ formData: { ...stateRef.current.formData, _uploadCafeId: e.target.value, _uploadStatus: '', _uploadError: '' } })}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-white outline-none focus:border-indigo-500"
+                                >
+                                  <option value="">— اختر كافيه —</option>
+                                  {tenants.filter(t => t.status === 'active').map(t => (
+                                    <option key={t.id} value={t.id}>{t.name} ({t.id})</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* مواد خام JSON */}
+                              <div>
+                                <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                  <Package size={15} className="text-indigo-500" /> المواد الخام (JSON) — اختياري
+                                </label>
+                                <textarea
+                                  value={uploadMaterials}
+                                  onChange={e => setState({ formData: { ...stateRef.current.formData, _uploadMaterials: e.target.value, _uploadStatus: '', _uploadError: '' } })}
+                                  placeholder='[{"id":"rm_1","name":"قهوة","unit":"جرام","currentStock":1000,"costPerUnit":0.5}]'
+                                  rows={5}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-indigo-500 resize-y"
+                                  dir="ltr"
+                                />
+                              </div>
+
+                              {/* منتجات JSON */}
+                              <div>
+                                <label className="block text-sm font-black mb-2 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                  <Coffee size={15} className="text-indigo-500" /> المنتجات والريسيبي (JSON) — اختياري
+                                </label>
+                                <textarea
+                                  value={uploadProducts}
+                                  onChange={e => setState({ formData: { ...stateRef.current.formData, _uploadProducts: e.target.value, _uploadStatus: '', _uploadError: '' } })}
+                                  placeholder='[{"id":"prod_1","name":"قهوة تركي","category":"قهوة","price":25,"recipe":[{"materialId":"rm_1","amount":15}]}]'
+                                  rows={7}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-xl font-mono text-xs text-slate-700 dark:text-slate-300 outline-none focus:border-indigo-500 resize-y"
+                                  dir="ltr"
+                                />
+                              </div>
+
+                              {/* رسالة الخطأ */}
+                              {uploadError && (
+                                <div className="p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl flex items-start gap-3">
+                                  <AlertCircle className="text-rose-500 w-5 h-5 shrink-0 mt-0.5" />
+                                  <p className="text-rose-700 dark:text-rose-400 text-sm font-bold">{uploadError}</p>
+                                </div>
+                              )}
+
+                              {/* رسالة النجاح */}
+                              {uploadStatus === 'success' && (
+                                <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-3">
+                                  <Wifi className="text-emerald-500 w-5 h-5" />
+                                  <p className="text-emerald-700 dark:text-emerald-400 text-sm font-black">✅ تم الرفع بنجاح! سيظهر التحديث فوراً عند الكافيه.</p>
+                                </div>
+                              )}
+
+                              {/* زر الرفع */}
+                              <button
+                                onClick={handleUpload}
+                                disabled={uploadStatus === 'uploading' || !uploadCafeId}
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 shadow-lg transition-colors"
+                              >
+                                {uploadStatus === 'uploading' ? (
+                                  <><Loader2 size={20} className="animate-spin" /> جاري الرفع...</>
+                                ) : (
+                                  <><Upload size={20} /> رفع المنيو للكافيه</>
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1162,20 +1396,98 @@ export default function App() {
                     {lowStockItems.length > 0 && <div className="mb-6 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 flex items-center gap-3"><Bell className="text-rose-500 shrink-0 w-5 h-5" /><p className="text-rose-700 dark:text-rose-400 font-black text-sm">تنبيه: {lowStockItems.length} مادة وصلت للحد الأدنى!</p></div>}
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                       <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-right min-w-[500px]">
+                        <table className="w-full text-right min-w-[650px]">
                           <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-500 text-sm">
-                            <tr><th className="p-5">المادة</th><th className="p-5">الوحدة</th><th className="p-5">الكمية</th><th className="p-5">التكلفة</th><th className="p-5 text-center">حذف</th></tr>
+                            <tr>
+                              <th className="p-4">المادة</th>
+                              <th className="p-4">الوحدة</th>
+                              <th className="p-4 text-center">الكمية الحالية</th>
+                              <th className="p-4 text-center">تعديل الكمية</th>
+                              <th className="p-4 text-center">التكلفة/وحدة</th>
+                              <th className="p-4 text-center">حذف</th>
+                            </tr>
                           </thead>
                           <tbody>
                             {rawMaterials.map(rm => (
                               <tr key={rm.id} className={`border-b border-slate-100 dark:border-slate-700 text-sm ${rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
-                                <td className="p-5 font-black text-slate-800 dark:text-white flex items-center gap-2">{rm.currentStock <= STOCK_ALERT_THRESHOLD && <Bell size={14} className="text-rose-500 shrink-0" />}{rm.name}</td>
-                                <td className="p-5 text-slate-500 dark:text-slate-400">{rm.unit}</td>
-                                <td className="p-5"><span className={`px-4 py-1.5 rounded-xl font-black text-xs ${rm.currentStock <= 0 ? 'bg-red-100 text-red-700' : rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{rm.currentStock}</span></td>
-                                <td className="p-5 font-bold text-slate-600 dark:text-slate-300">{rm.costPerUnit} ج</td>
-                                <td className="p-5 text-center"><button onClick={() => setState({ deleteConfig: { type: 'material', id: rm.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button></td>
+                                {/* اسم المادة */}
+                                <td className="p-4 font-black text-slate-800 dark:text-white">
+                                  <div className="flex items-center gap-2">
+                                    {rm.currentStock <= STOCK_ALERT_THRESHOLD && <Bell size={13} className="text-rose-500 shrink-0" />}
+                                    {rm.name}
+                                  </div>
+                                </td>
+                                {/* الوحدة */}
+                                <td className="p-4 text-slate-500 dark:text-slate-400 font-bold">{rm.unit}</td>
+                                {/* الكمية الحالية — badge ملوّن */}
+                                <td className="p-4 text-center">
+                                  <span className={`px-3 py-1.5 rounded-xl font-black text-xs ${rm.currentStock <= 0 ? 'bg-red-100 text-red-700' : rm.currentStock <= STOCK_ALERT_THRESHOLD ? 'bg-rose-100 text-rose-700' : rm.currentStock < 500 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {rm.currentStock}
+                                  </span>
+                                </td>
+                                {/* ✏️ تعديل الكمية inline — اضغط + أو - أو اكتب رقم */}
+                                <td className="p-2 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {/* زر طرح */}
+                                    <button
+                                      onClick={() => {
+                                        const newStock = Math.max(0, (rm.currentStock || 0) - 1);
+                                        const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, currentStock: newStock } : r);
+                                        setField('rawMaterials', newArr);
+                                        syncToCloud({ rawMaterials: newArr });
+                                      }}
+                                      className="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-500 hover:bg-rose-500 hover:text-white flex items-center justify-center font-black transition-colors text-sm"
+                                    >−</button>
+                                    {/* حقل إدخال مباشر */}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={rm.currentStock}
+                                      onChange={e => {
+                                        const v = parseFloat(e.target.value) || 0;
+                                        const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, currentStock: v } : r);
+                                        setField('rawMaterials', newArr);
+                                      }}
+                                      onBlur={e => {
+                                        // حفظ عند الخروج من الحقل
+                                        syncToCloud({ rawMaterials });
+                                      }}
+                                      className="w-20 p-1.5 text-center font-black text-sm bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-indigo-500 text-slate-800 dark:text-white"
+                                    />
+                                    {/* زر جمع */}
+                                    <button
+                                      onClick={() => {
+                                        const newStock = (rm.currentStock || 0) + 1;
+                                        const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, currentStock: newStock } : r);
+                                        setField('rawMaterials', newArr);
+                                        syncToCloud({ rawMaterials: newArr });
+                                      }}
+                                      className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 hover:bg-emerald-500 hover:text-white flex items-center justify-center font-black transition-colors text-sm"
+                                    >+</button>
+                                  </div>
+                                </td>
+                                {/* تعديل التكلفة inline */}
+                                <td className="p-2 text-center">
+                                  <SafeNumberInput
+                                    value={rm.costPerUnit}
+                                    onSave={v => {
+                                      const newArr = rawMaterials.map(r => r.id === rm.id ? { ...r, costPerUnit: v } : r);
+                                      setField('rawMaterials', newArr);
+                                      syncToCloud({ rawMaterials: newArr });
+                                    }}
+                                    colorClass="text-indigo-600 focus:border-indigo-500 border-indigo-100 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-800"
+                                  />
+                                </td>
+                                {/* حذف */}
+                                <td className="p-4 text-center">
+                                  <button onClick={() => setState({ deleteConfig: { type: 'material', id: rm.id }, activeModal: 'delete' })} className="text-rose-500 p-2 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors"><Trash2 size={15} /></button>
+                                </td>
                               </tr>
                             ))}
+                            {rawMaterials.length === 0 && (
+                              <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-bold">لا توجد مواد خام مضافة بعد</td></tr>
+                            )}
                           </tbody>
                         </table>
                       </div>

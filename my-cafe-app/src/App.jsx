@@ -20,7 +20,6 @@ const OWNER_EMAIL = 'owner@coffeeerp.app';
 const STOCK_ALERT_THRESHOLD = 50;
 const TAX_RATE = 0.14;
 
-// بداية نظيفة بدون منتجات افتراضية
 const defaultProducts = [];
 
 // ========== Reducer ==========
@@ -150,17 +149,10 @@ export default function App() {
   }, [setField]);
 
   useEffect(() => {
-    if (!auth || !db) {
-      setField('isDataLoaded', true);
-      return;
-    }
+    if (!auth || !db) { setField('isDataLoaded', true); return; }
     let unsubAuth = null;
     const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.error("Auth init error:", e);
-      }
+      try { await signInAnonymously(auth); } catch (e) { console.error("Auth init error:", e); }
     };
     initAuth();
     unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -168,10 +160,7 @@ export default function App() {
       setField('isDataLoaded', true);
     });
     const timer = setTimeout(() => setField('isDataLoaded', true), 3000);
-    return () => {
-      if (unsubAuth) unsubAuth();
-      clearTimeout(timer);
-    };
+    return () => { if (unsubAuth) unsubAuth(); clearTimeout(timer); };
   }, [setField]);
 
   useEffect(() => {
@@ -186,10 +175,7 @@ export default function App() {
         });
       }
       setField('isDataLoaded', true);
-    }, (err) => {
-      console.error("Platform config error:", err);
-      setField('isDataLoaded', true);
-    });
+    }, (err) => { console.error("Platform config error:", err); setField('isDataLoaded', true); });
     return () => unsub();
   }, [fbUser, setField, setState]);
 
@@ -216,25 +202,19 @@ export default function App() {
         });
       }
       setField('isSyncing', snap.metadata.hasPendingWrites);
-    }, (err) => {
-      console.error("Cafe data error:", err);
-      showToast('فشل تحميل بيانات الكافيه', 'error');
-    });
+    }, (err) => { console.error("Cafe data error:", err); showToast('فشل تحميل بيانات الكافيه', 'error'); });
     return () => unsub();
   }, [fbUser, currentUser?.cafeId, setField, setState, showToast]);
 
   const syncPlatformToCloud = useCallback(async (newData) => {
     if (!db || !fbUserRef.current) throw new Error("قاعدة البيانات غير متصلة");
     try {
-      await setDoc(doc(db, 'coffee_erp_platform', 'config'), {
-        ...newData,
-        lastUpdated: new Date().toISOString()
-      }, { merge: true });
+      await setDoc(doc(db, 'coffee_erp_platform', 'config'), { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
       return true;
     } catch (e) {
       console.error("Platform sync error:", e);
       showToast(`فشل المزامنة: ${e.message}`, 'error');
-      throw e; 
+      throw e;
     }
   }, [showToast]);
 
@@ -243,10 +223,7 @@ export default function App() {
     if (!db || !fbUserRef.current || !cafeId) return;
     setField('syncStatus', 'saving');
     try {
-      await setDoc(doc(db, 'coffee_erp_cafes', cafeId), {
-        ...newData,
-        lastUpdated: new Date().toISOString()
-      }, { merge: true });
+      await setDoc(doc(db, 'coffee_erp_cafes', cafeId), { ...newData, lastUpdated: new Date().toISOString() }, { merge: true });
       setField('syncStatus', 'success');
       setField('syncError', '');
       setTimeout(() => setField('syncStatus', 'idle'), 2000);
@@ -259,28 +236,19 @@ export default function App() {
     }
   }, [setField, showToast]);
 
-  // ========== Authentication Handlers ==========
+  // ========== Authentication ==========
   const processUserRole = useCallback(async (user) => {
     const email = user.email?.toLowerCase();
     if (email === OWNER_EMAIL) {
-      setState({
-        currentUser: { name: 'مالك المنصة', role: 'super_admin', cafeId: null },
-        currentRoute: 'saas_dashboard'
-      });
+      setState({ currentUser: { name: 'مالك المنصة', role: 'super_admin', cafeId: null }, currentRoute: 'saas_dashboard' });
       showToast('مرحباً بمالك المنصة', 'success');
       return true;
     }
-
     let matchedTenant = null, matchedRole = null;
     for (const t of tenants) {
-      if (t.adminEmail?.toLowerCase() === email) {
-        matchedTenant = t; matchedRole = 'admin'; break;
-      }
-      if (t.cashierEmail?.toLowerCase() === email) {
-        matchedTenant = t; matchedRole = 'cashier'; break;
-      }
+      if (t.adminEmail?.toLowerCase() === email) { matchedTenant = t; matchedRole = 'admin'; break; }
+      if (t.cashierEmail?.toLowerCase() === email) { matchedTenant = t; matchedRole = 'cashier'; break; }
     }
-
     if (!matchedTenant) {
       await signOut(auth);
       setField('loginError', 'البريد الإلكتروني غير مسجل في النظام.');
@@ -293,15 +261,9 @@ export default function App() {
       showToast('الاشتراك موقوف', 'error');
       return false;
     }
-
     const displayName = matchedRole === 'admin' ? `مدير - ${matchedTenant.name}` : `كاشير - ${matchedTenant.name}`;
     setState({
-      currentUser: {
-        name: displayName,
-        role: matchedRole,
-        cafeId: matchedTenant.id,
-        cafeName: matchedTenant.name
-      },
+      currentUser: { name: displayName, role: matchedRole, cafeId: matchedTenant.id, cafeName: matchedTenant.name },
       currentRoute: matchedRole === 'admin' ? 'dashboard' : 'pos'
     });
     showToast(`أهلاً ${displayName}`, 'success');
@@ -318,15 +280,10 @@ export default function App() {
       await processUserRole(userCred.user);
     } catch (err) {
       let errorMsg = 'حدث خطأ غير متوقع';
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        errorMsg = 'كلمة المرور غير صحيحة.';
-      } else if (err.code === 'auth/user-not-found') {
-        errorMsg = 'البريد الإلكتروني غير مسجل في Firebase.';
-      } else if (err.code === 'auth/too-many-requests') {
-        errorMsg = 'محاولات كثيرة. يرجى الانتظار قبل المحاولة مجدداً.';
-      } else {
-        errorMsg = err.message;
-      }
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') errorMsg = 'كلمة المرور غير صحيحة.';
+      else if (err.code === 'auth/user-not-found') errorMsg = 'البريد الإلكتروني غير مسجل في Firebase.';
+      else if (err.code === 'auth/too-many-requests') errorMsg = 'محاولات كثيرة. يرجى الانتظار.';
+      else errorMsg = err.message;
       setField('loginError', errorMsg);
       showToast(errorMsg, 'error');
     } finally {
@@ -337,26 +294,19 @@ export default function App() {
   const handleSendEmailLink = async (e) => {
     e.preventDefault();
     const email = emailLinkEmail.trim().toLowerCase();
-    if (!email || !email.includes('@')) {
-      setField('emailLinkError', 'يرجى إدخال بريد إلكتروني صحيح');
-      return;
-    }
+    if (!email || !email.includes('@')) { setField('emailLinkError', 'يرجى إدخال بريد إلكتروني صحيح'); return; }
     setField('emailLinkLoading', true);
     setField('emailLinkError', '');
-    const actionCodeSettings = {
-      url: `${window.location.origin}/auth/email-link`,
-      handleCodeInApp: true,
-    };
+    const actionCodeSettings = { url: `${window.location.origin}/auth/email-link`, handleCodeInApp: true };
     try {
       await sendSignInLinkToEmail(auth, email, actionCodeSettings);
       window.localStorage.setItem('emailForSignIn', email);
       setState({ emailLinkSent: true, emailLinkEmail: email, emailLinkLoading: false });
       showToast('تم إرسال رابط الدخول إلى بريدك الإلكتروني', 'success');
     } catch (error) {
-      console.error('Email Link Error:', error);
       let errorMsg = 'فشل إرسال الرابط. حاول مرة أخرى.';
       if (error.code === 'auth/invalid-email') errorMsg = 'بريد إلكتروني غير صالح';
-      else if (error.code === 'auth/too-many-requests') errorMsg = 'طلبات كثيرة جداً. انتظر قليلاً.';
+      else if (error.code === 'auth/too-many-requests') errorMsg = 'طلبات كثيرة جداً.';
       setField('emailLinkError', errorMsg);
       setField('emailLinkLoading', false);
       showToast(errorMsg, 'error');
@@ -364,29 +314,14 @@ export default function App() {
   };
 
   const handleLogout = useCallback(async () => {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.error("Logout error:", e);
-    }
-    setState({
-      currentUser: null,
-      loginEmail: '',
-      loginPassword: '',
-      emailLinkSent: false,
-      emailLinkEmail: '',
-      cart: [],
-      lastOrder: null,
-      activeTableId: null,
-      activeModal: null,
-      isMobileCartOpen: false
-    });
+    try { await signOut(auth); } catch (e) { console.error("Logout error:", e); }
+    setState({ currentUser: null, loginEmail: '', loginPassword: '', emailLinkSent: false, emailLinkEmail: '', cart: [], lastOrder: null, activeTableId: null, activeModal: null, isMobileCartOpen: false });
     showToast('تم تسجيل الخروج', 'success');
   }, [setState, showToast]);
-  // ========== Helper Functions & Computed Values ==========
+
+  // ========== Computed Values ==========
   const categories = useMemo(() => {
-    return Array.from(new Set(products.map(p => p.category).filter(Boolean)))
-      .map(c => ({ id: c, name: c }));
+    return Array.from(new Set(products.map(p => p.category).filter(Boolean))).map(c => ({ id: c, name: c }));
   }, [products]);
 
   const lowStockItems = useMemo(() => rawMaterials.filter(rm => rm.currentStock <= STOCK_ALERT_THRESHOLD), [rawMaterials]);
@@ -424,7 +359,7 @@ export default function App() {
     return Math.max(0, product.price - validOffer.discountValue);
   }, [offers]);
 
-  // ========== Modal, Form & Image Upload Handlers ==========
+  // ========== Modal Handlers ==========
   const openModal = useCallback((type, data = {}) => {
     if (type === 'product' && !data.recipe) data.recipe = [];
     setState({ formData: data, activeModal: type });
@@ -438,7 +373,6 @@ export default function App() {
     setState({ formData: { ...stateRef.current.formData, [e.target.name]: e.target.value } });
   }, [setState]);
 
-  // كود رفع وضغط الصور قبل الحفظ لتسريع قاعدة البيانات
   const handleImageUpload = useCallback((e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -447,13 +381,13 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400; // تصغير العرض لـ 400 بيكسل كحد أقصى لتسريع النظام
+        const MAX_WIDTH = 400;
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); // ضغط الجودة لـ 60%
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         setState({ formData: { ...stateRef.current.formData, image: compressedBase64 } });
       };
       img.src = event.target.result;
@@ -465,28 +399,13 @@ export default function App() {
     if (!deleteConfig) return;
     const { type, id } = deleteConfig;
     let updates = {};
-    if (type === 'material') {
-      const newArr = rawMaterials.filter(rm => rm.id !== id);
-      setField('rawMaterials', newArr); updates.rawMaterials = newArr;
-    } else if (type === 'product') {
-      const newArr = products.filter(p => p.id !== id);
-      setField('products', newArr); updates.products = newArr;
-    } else if (type === 'employee') {
-      const newArr = employees.filter(e => e.id !== id);
-      setField('employees', newArr); updates.employees = newArr;
-    } else if (type === 'table') {
-      const newArr = tables.filter(t => t.id !== id);
-      setField('tables', newArr); updates.tables = newArr;
-    } else if (type === 'expense') {
-      const newArr = expenses.filter(ex => ex.id !== id);
-      setField('expenses', newArr); updates.expenses = newArr;
-    } else if (type === 'offer') {
-      const newArr = offers.filter(o => o.id !== id);
-      setField('offers', newArr); updates.offers = newArr;
-    } else if (type === 'psDevice') {
-      const newArr = psDevices.filter(d => d.id !== id);
-      setField('psDevices', newArr); updates.psDevices = newArr;
-    }
+    if (type === 'material') { const newArr = rawMaterials.filter(rm => rm.id !== id); setField('rawMaterials', newArr); updates.rawMaterials = newArr; }
+    else if (type === 'product') { const newArr = products.filter(p => p.id !== id); setField('products', newArr); updates.products = newArr; }
+    else if (type === 'employee') { const newArr = employees.filter(e => e.id !== id); setField('employees', newArr); updates.employees = newArr; }
+    else if (type === 'table') { const newArr = tables.filter(t => t.id !== id); setField('tables', newArr); updates.tables = newArr; }
+    else if (type === 'expense') { const newArr = expenses.filter(ex => ex.id !== id); setField('expenses', newArr); updates.expenses = newArr; }
+    else if (type === 'offer') { const newArr = offers.filter(o => o.id !== id); setField('offers', newArr); updates.offers = newArr; }
+    else if (type === 'psDevice') { const newArr = psDevices.filter(d => d.id !== id); setField('psDevices', newArr); updates.psDevices = newArr; }
     syncToCloud(updates);
     closeModal();
     showToast('تم الحذف بنجاح', 'success');
@@ -542,18 +461,14 @@ export default function App() {
     });
   }, [offers, genericSave]);
 
-  // ========== PlayStation Logic (تعديل الحساب بالربع ساعة) ==========
+  // ========== PlayStation Logic ==========
   const startPsSession = useCallback((deviceId) => {
     const device = psDevices.find(d => d.id === deviceId);
     if (!device) return;
     const session = {
-      id: `ps_${Date.now()}`,
-      deviceId,
-      deviceName: device.name,
-      startTime: Date.now(),
-      startTimeStr: new Date().toLocaleString('ar-EG'),
-      status: 'active',
-      cashierName: currentUser.name
+      id: `ps_${Date.now()}`, deviceId, deviceName: device.name,
+      startTime: Date.now(), startTimeStr: new Date().toLocaleString('ar-EG'),
+      status: 'active', cashierName: currentUser.name
     };
     const newSessions = [...psSessions, session];
     setField('psSessions', newSessions);
@@ -566,27 +481,13 @@ export default function App() {
     if (!session) return;
     const device = psDevices.find(d => d.id === session.deviceId);
     if (!device) return;
-    
-    // حساب الدقائق الفعلية
     const durationMinActual = Math.ceil((Date.now() - session.startTime) / 60000);
-    
-    // التقريب لأقرب ربع ساعة (15 دقيقة) للحساب المالي (لو 14 دقيقة تتحسب 15، لو 40 تتحسب 45)
+    // التقريب لأقرب ربع ساعة — 14 دقيقة = 15، 16 دقيقة = 30، 40 دقيقة = 45
     const roundedMin = Math.ceil(durationMinActual / 15) * 15;
     const cost = (roundedMin / 60) * (device.hourlyRate || 0);
-
-    const endedSession = { 
-      ...session, 
-      endTime: Date.now(), 
-      endTimeStr: new Date().toLocaleString('ar-EG'), 
-      durationMin: roundedMin, 
-      actualMin: durationMinActual, 
-      cost, 
-      status: 'ended' 
-    };
-    
+    const endedSession = { ...session, endTime: Date.now(), endTimeStr: new Date().toLocaleString('ar-EG'), durationMin: roundedMin, actualMin: durationMinActual, cost, status: 'ended' };
     const newSessions = psSessions.map(s => s.id === sessionId ? endedSession : s);
     setField('psSessions', newSessions);
-    
     let updates = { psSessions: newSessions };
     if (cost > 0) {
       const psOrder = {
@@ -602,14 +503,14 @@ export default function App() {
       updates.orders = newOrders;
     }
     syncToCloud(updates);
-    showToast(`تم إنهاء الجلسة بتكلفة ${cost.toFixed(2)} ج`, 'success');
+    showToast(`تم إنهاء الجلسة — ${roundedMin} دقيقة (فعلي: ${durationMinActual}) — ${cost.toFixed(2)} ج`, 'success');
   }, [psSessions, psDevices, orders, activeShift, currentUser, setField, syncToCloud, showToast]);
+
   // ========== POS Logic ==========
   const processOrder = useCallback(() => {
     if (cart.length === 0) { showToast('السلة فارغة', 'error'); return; }
     if (orderType === 'dine_in' && !activeTableId) { showToast('يرجى تحديد الطاولة أولاً!', 'error'); return; }
     if (currentUser.role === 'cashier' && !activeShift) { showToast('يجب استلام عهدة أولاً!', 'error'); return; }
-
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     let discount = 0;
     if (currentUser.role === 'admin' && discountValue && parseFloat(discountValue) > 0) {
@@ -619,7 +520,6 @@ export default function App() {
     const afterDiscount = subtotal - discount;
     const tax = isTaxEnabled ? afterDiscount * TAX_RATE : 0;
     const total = afterDiscount + tax;
-
     const newRM = [...rawMaterials];
     cart.forEach(cartItem => {
       const product = products.find(p => p.id === cartItem.id);
@@ -630,31 +530,21 @@ export default function App() {
         });
       }
     });
-
     const newOrder = {
       id: Date.now(), items: cart, subtotal,
-      discountAmount: discount,
-      discountType: discount > 0 ? discountType : null,
+      discountAmount: discount, discountType: discount > 0 ? discountType : null,
       discountValue: discount > 0 ? parseFloat(discountValue) : null,
-      tax, total,
-      date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
+      tax, total, date: new Date().toLocaleString('ar-EG'), timestamp: Date.now(),
       note: orderType === 'takeaway' ? 'تيك أواي' : `صالة - ${tables.find(t => t.id === activeTableId)?.name || ''}`,
       shiftId: activeShift?.id || null, cashierName: currentUser.name
     };
-
     const newOrders = [...orders, newOrder];
     let newActiveTableOrders = { ...activeTableOrders };
     if (orderType === 'dine_in' && activeTableId) delete newActiveTableOrders[activeTableId];
-
-    setState({
-      rawMaterials: newRM, orders: newOrders, activeTableOrders: newActiveTableOrders,
-      cart: [], lastOrder: newOrder, orderType: 'takeaway',
-      activeTableId: null, isMobileCartOpen: false, discountValue: ''
-    });
+    setState({ rawMaterials: newRM, orders: newOrders, activeTableOrders: newActiveTableOrders, cart: [], lastOrder: newOrder, orderType: 'takeaway', activeTableId: null, isMobileCartOpen: false, discountValue: '' });
     syncToCloud({ rawMaterials: newRM, orders: newOrders, activeTableOrders: newActiveTableOrders });
     showToast(`تم إتمام الطلب بقيمة ${total.toFixed(2)} ج`, 'success');
-  }, [cart, orderType, activeTableId, currentUser, activeShift, discountValue, discountType, isTaxEnabled,
-      rawMaterials, products, tables, orders, activeTableOrders, setState, syncToCloud, showToast]);
+  }, [cart, orderType, activeTableId, currentUser, activeShift, discountValue, discountType, isTaxEnabled, rawMaterials, products, tables, orders, activeTableOrders, setState, syncToCloud, showToast]);
 
   const holdTableOrder = useCallback(async () => {
     if (isHoldingTable || cart.length === 0 || !activeTableId) return;
@@ -664,11 +554,8 @@ export default function App() {
       setState({ activeTableOrders: newActiveTableOrders, cart: [], activeTableId: null, orderType: 'takeaway', isMobileCartOpen: false });
       await syncToCloud({ activeTableOrders: newActiveTableOrders });
       showToast('تم حفظ الطلب على الطاولة', 'success');
-    } catch (error) {
-      showToast('فشل حفظ الطلب', 'error');
-    } finally {
-      setField('isHoldingTable', false);
-    }
+    } catch (error) { showToast('فشل حفظ الطلب', 'error'); }
+    finally { setField('isHoldingTable', false); }
   }, [isHoldingTable, cart, activeTableId, activeTableOrders, setField, setState, syncToCloud, showToast]);
 
   // ========== Financial Metrics ==========
@@ -706,11 +593,9 @@ export default function App() {
     return { totalRevenue, totalExpenses, totalCogs, netProfit: totalRevenue - (totalExpenses + totalCogs), orders: filteredOrders, ordersCount: filteredOrders.length };
   }, [orders, expenses, rawMaterials, products, reportPeriod]);
 
-  const handleAuthSuccess = useCallback(async (user) => {
-    await processUserRole(user);
-  }, [processUserRole]);
+  const handleAuthSuccess = useCallback(async (user) => { await processUserRole(user); }, [processUserRole]);
 
-  // ========== Loading State ==========
+  // ========== Loading ==========
   if (!isDataLoaded) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900" dir="rtl">
@@ -726,12 +611,22 @@ export default function App() {
   }
 
   if (location.pathname === '/auth/email-link') {
-    return (
-      <ErrorBoundary>
-        <AuthHandler onLoginSuccess={handleAuthSuccess} />
-      </ErrorBoundary>
-    );
+    return <ErrorBoundary><AuthHandler onLoginSuccess={handleAuthSuccess} /></ErrorBoundary>;
   }
+
+  // ========== NAV ITEMS — used by sidebar ==========
+  const navItems = [
+    { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة', roles: ['admin'] },
+    { id: 'reports', icon: <FileText size={19} />, label: 'التقارير', roles: ['admin'] },
+    { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
+    { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
+    { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
+    { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin', 'cashier'] },
+    { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
+    { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] },
+    { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
+    { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
+  ];
 
   // ========== MAIN RETURN ==========
   return (
@@ -739,23 +634,20 @@ export default function App() {
       <div className={isDarkMode ? 'dark' : ''}>
         <Toaster />
 
-        {/* ===== Sync / Connection status bar ===== */}
+        {/* Status bar */}
         <div className={`fixed top-0 left-0 right-0 z-[60] text-[10px] md:text-xs font-bold py-1.5 px-3 flex justify-between items-center shadow-md transition-all
           ${!isOnline ? 'bg-rose-600 text-white' : syncStatus === 'error' ? 'bg-rose-600 text-white' :
             syncStatus === 'saving' ? 'bg-amber-500 text-white' : syncStatus === 'success' ? 'bg-emerald-500 text-white' :
             isSyncing ? 'bg-amber-500 text-white' : fbUser ? 'bg-emerald-600 text-white' : 'bg-slate-500 text-white'}`}>
           <div className="flex items-center gap-1.5">
-            {!isOnline ? <WifiOff size={13} /> : syncStatus === 'saving' || isSyncing ? <RefreshCw size={13} className="animate-spin" /> :
-              syncStatus === 'error' ? <AlertCircle size={13} /> : <Wifi size={13} />}
+            {!isOnline ? <WifiOff size={13} /> : syncStatus === 'saving' || isSyncing ? <RefreshCw size={13} className="animate-spin" /> : syncStatus === 'error' ? <AlertCircle size={13} /> : <Wifi size={13} />}
             <span className="truncate max-w-[260px]">
-              {!isOnline ? 'أوفلاين' : syncStatus === 'error' ? `❌ خطأ: ${syncError}` :
-                syncStatus === 'saving' ? 'جاري الحفظ...' : syncStatus === 'success' ? '✅ تم الحفظ' :
-                isSyncing ? 'جاري المزامنة...' : fbUser ? 'متصل ✓' : 'جاري التحميل...'}
+              {!isOnline ? 'أوفلاين' : syncStatus === 'error' ? `❌ خطأ: ${syncError}` : syncStatus === 'saving' ? 'جاري الحفظ...' : syncStatus === 'success' ? '✅ تم الحفظ' : isSyncing ? 'جاري المزامنة...' : fbUser ? 'متصل ✓' : 'جاري التحميل...'}
             </span>
           </div>
           <div className="flex items-center gap-2">
             {currentUser && lowStockItems.length > 0 && (
-              <button onClick={() => setField('currentRoute', 'inventory')} className="flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full pulse-red">
+              <button onClick={() => setField('currentRoute', 'inventory')} className="flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full">
                 <Bell size={11} /> {lowStockItems.length} مواد منخفضة
               </button>
             )}
@@ -771,13 +663,11 @@ export default function App() {
           </span>
         </div>
 
+        {/* ===== LOGIN ===== */}
         {!currentUser ? (
-          /* ===== Login Screen ===== */
           <div dir="rtl" className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-sans relative overflow-hidden p-4 pt-10">
-            {/* ... Login UI ... */}
             <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
-
             <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border-t-8 border-indigo-600 z-10 relative">
               <div className="flex justify-between items-start mb-8">
                 <div className="flex items-center gap-4">
@@ -791,85 +681,57 @@ export default function App() {
                   {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
               </div>
-
               <div className="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
                 <button onClick={() => setState({ currentUser: { role: 'customer' } })} className="w-full bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-600 dark:hover:text-white font-black py-4 rounded-xl transition-all shadow-sm text-lg flex justify-center items-center gap-2">
                   <Store size={22} /> تصفح المنيو الرقمي (للزبائن)
                 </button>
               </div>
-
               <div className="flex gap-2 mb-6 p-1 bg-slate-100 dark:bg-slate-700 rounded-xl">
-                <button type="button" onClick={() => setField('loginMethod', 'password')}
-                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'password' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+                <button type="button" onClick={() => setField('loginMethod', 'password')} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'password' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
                   <Lock size={14} className="inline ml-1" /> كلمة المرور
                 </button>
-                <button type="button" onClick={() => setField('loginMethod', 'emailLink')}
-                  className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'emailLink' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+                <button type="button" onClick={() => setField('loginMethod', 'emailLink')} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-colors ${loginMethod === 'emailLink' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
                   <Mail size={14} className="inline ml-1" /> رابط سريع
                 </button>
               </div>
-
               {loginError && loginMethod === 'password' && (
                 <div className="mb-5 p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-sm font-bold rounded-xl flex items-center gap-2 border border-rose-100 dark:border-rose-800">
                   <ShieldAlert size={18} /> {loginError}
                 </div>
               )}
-
               {loginMethod === 'password' ? (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <p className="text-sm font-bold text-slate-600 dark:text-slate-400">تسجيل دخول الموظفين</p>
                   <div className="relative">
                     <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                    <input required type="email" placeholder="البريد الإلكتروني" value={loginEmail}
-                      onChange={e => { setField('loginEmail', e.target.value); setField('loginError', ''); }}
-                      className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm"
-                      dir="ltr" autoComplete="email" />
+                    <input required type="email" placeholder="البريد الإلكتروني" value={loginEmail} onChange={e => { setField('loginEmail', e.target.value); setField('loginError', ''); }} className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm" dir="ltr" autoComplete="email" />
                   </div>
                   <div className="relative">
                     <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                    <input required type="password" placeholder="كلمة المرور" value={loginPassword}
-                      onChange={e => { setField('loginPassword', e.target.value); setField('loginError', ''); }}
-                      className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors tracking-widest text-left"
-                      dir="ltr" autoComplete="current-password" />
+                    <input required type="password" placeholder="كلمة المرور" value={loginPassword} onChange={e => { setField('loginPassword', e.target.value); setField('loginError', ''); }} className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors tracking-widest text-left" dir="ltr" autoComplete="current-password" />
                   </div>
                   <button type="submit" disabled={isLoggingIn} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
-                    {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : null}
-                    تسجيل الدخول
+                    {isLoggingIn ? <Loader2 size={20} className="animate-spin" /> : null} تسجيل الدخول
                   </button>
                 </form>
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm font-bold text-slate-600 dark:text-slate-400">أدخل بريدك الإلكتروني وسنرسل لك رابط تسجيل دخول فوري.</p>
-                  {emailLinkError && (
-                    <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl text-sm flex items-center gap-2">
-                      <AlertCircle size={16} /> {emailLinkError}
-                    </div>
-                  )}
+                  {emailLinkError && <div className="p-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl text-sm flex items-center gap-2"><AlertCircle size={16} /> {emailLinkError}</div>}
                   {emailLinkSent ? (
                     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl text-center border border-emerald-200 dark:border-emerald-800">
                       <Mail className="w-10 h-10 text-emerald-600 mx-auto mb-3" />
                       <h3 className="font-black text-lg text-emerald-700 dark:text-emerald-400 mb-2">تم إرسال الرابط!</h3>
-                      <p className="text-sm text-emerald-600 dark:text-emerald-300 font-bold">
-                        أرسلنا رابط تسجيل الدخول إلى<br />
-                        <span dir="ltr" className="text-base mt-1 block">{emailLinkEmail}</span>
-                      </p>
-                      <p className="text-xs text-emerald-500 mt-4">افتح بريدك الإلكتروني وانقر على الرابط لتسجيل الدخول.</p>
-                      <button onClick={() => setState({ emailLinkSent: false, emailLinkEmail: '', emailLinkError: '', loginMethod: 'password' })}
-                        className="mt-4 text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline">
-                        العودة لتسجيل الدخول بكلمة المرور
-                      </button>
+                      <p className="text-sm text-emerald-600 dark:text-emerald-300 font-bold">أرسلنا رابط تسجيل الدخول إلى<br /><span dir="ltr" className="text-base mt-1 block">{emailLinkEmail}</span></p>
+                      <button onClick={() => setState({ emailLinkSent: false, emailLinkEmail: '', emailLinkError: '', loginMethod: 'password' })} className="mt-4 text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline">العودة لتسجيل الدخول بكلمة المرور</button>
                     </div>
                   ) : (
                     <form onSubmit={handleSendEmailLink} className="space-y-4">
                       <div className="relative">
                         <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 pointer-events-none" />
-                        <input required type="email" placeholder="البريد الإلكتروني" value={emailLinkEmail}
-                          onChange={(e) => { setField('emailLinkEmail', e.target.value); setField('emailLinkError', ''); }}
-                          className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm"
-                          dir="ltr" autoComplete="email" />
+                        <input required type="email" placeholder="البريد الإلكتروني" value={emailLinkEmail} onChange={(e) => { setField('emailLinkEmail', e.target.value); setField('emailLinkError', ''); }} className="w-full p-4 pr-12 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 text-slate-800 dark:text-white font-bold transition-colors text-sm" dir="ltr" autoComplete="email" />
                       </div>
-                      <button type="submit" disabled={emailLinkLoading}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
+                      <button type="submit" disabled={emailLinkLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-lg flex items-center justify-center gap-2">
                         {emailLinkLoading ? <><Loader2 size={20} className="animate-spin" /> جاري الإرسال...</> : 'إرسال رابط الدخول'}
                       </button>
                     </form>
@@ -880,26 +742,19 @@ export default function App() {
           </div>
 
         ) : currentUser.role === 'customer' ? (
-          /* ===== Digital Menu (Customer) ===== */
+          /* ===== CUSTOMER MENU ===== */
           <div dir="rtl" className="min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-y-auto custom-scrollbar pb-10 pt-7">
-            {/* ... Customer Menu UI ... */}
             <header className="bg-white dark:bg-slate-800 p-4 md:px-8 shadow-sm sticky top-0 z-30 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
               <h1 className="text-xl md:text-2xl font-black text-indigo-600 flex items-center gap-2"><Coffee /> منيو {globalSettings.appName || 'الكافيه'}</h1>
               <div className="flex items-center gap-3">
-                <button onClick={() => setField('isDarkMode', !isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300">
-                  {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-                <button onClick={() => setState({ currentUser: null })} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors">
-                  دخول الموظفين
-                </button>
+                <button onClick={() => setField('isDarkMode', !isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300">{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+                <button onClick={() => setState({ currentUser: null })} className="text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors">دخول الموظفين</button>
               </div>
             </header>
             <div className="p-4 md:px-8 flex gap-2 overflow-x-auto no-scrollbar sticky top-[73px] bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md z-20 pt-4 pb-3">
               <button onClick={() => setField('selectedCategoryFilter', 'all')} className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>الكل</button>
               {categories.map(cat => (
-                <button key={cat.id} onClick={() => setField('selectedCategoryFilter', cat.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>
-                  {cat.name}
-                </button>
+                <button key={cat.id} onClick={() => setField('selectedCategoryFilter', cat.id)} className={`whitespace-nowrap px-6 py-2.5 rounded-full font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'}`}>{cat.name}</button>
               ))}
             </div>
             <div className="p-4 md:p-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 max-w-7xl mx-auto mt-2">
@@ -909,12 +764,7 @@ export default function App() {
                 return (
                   <div key={p.id} className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-lg transition-all group flex flex-col relative">
                     {hasOffer && <div className="absolute top-3 left-3 z-10 bg-rose-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full">عرض خاص!</div>}
-                    {p.image ? (
-                      <img src={p.image} alt={p.name} className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500 shrink-0"
-                        onError={e => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&q=80'; }} />
-                    ) : (
-                      <div className="w-full h-48 bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-300 shrink-0"><Coffee size={60} /></div>
-                    )}
+                    {p.image ? <img src={p.image} alt={p.name} className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-500 shrink-0" onError={e => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=400&q=80'; }} /> : <div className="w-full h-48 bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-300 shrink-0"><Coffee size={60} /></div>}
                     <div className="p-4 flex flex-col flex-1 justify-between gap-3">
                       <h3 className="font-black text-lg text-slate-800 dark:text-white line-clamp-2">{p.name}</h3>
                       <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-700 pt-3">
@@ -931,10 +781,10 @@ export default function App() {
           </div>
 
         ) : (
-          /* ===== Employee / Admin Main Interface ===== */
+          /* ===== EMPLOYEE INTERFACE (admin / cashier / super_admin) ===== */
           <div dir="rtl" className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-hidden w-full pt-7">
 
-            {/* Sidebar for Admin and Cashier (التركات كلها هنا في إتاحة الشاشات) */}
+            {/* ===== SIDEBAR — admin & cashier ===== */}
             {(currentUser.role === 'admin' || currentUser.role === 'cashier') && (
               <>
                 {isMobileMenuOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setField('isMobileMenuOpen', false)} />}
@@ -947,18 +797,7 @@ export default function App() {
                     <button onClick={() => setField('isMobileMenuOpen', false)} className="lg:hidden text-slate-500 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg"><X size={18} /></button>
                   </div>
                   <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-                    {[
-                      { id: 'dashboard', icon: <LayoutDashboard size={19} />, label: 'لوحة القيادة', roles: ['admin'] },
-                      { id: 'reports', icon: <FileText size={19} />, label: 'التقارير', roles: ['admin'] },
-                      { id: 'shifts', icon: <ClipboardList size={19} />, label: 'الورديات', roles: ['admin'] },
-                      { id: 'inventory', icon: <Package size={19} />, label: 'المواد الخام', roles: ['admin'] },
-                      { id: 'products', icon: <Coffee size={19} />, label: 'المنتجات', roles: ['admin'] },
-                      { id: 'offers', icon: <Tag size={19} />, label: 'العروض', roles: ['admin', 'cashier'] }, // متاح للكاشير
-                      { id: 'tables', icon: <Utensils size={19} />, label: 'الصالة', roles: ['admin'] },
-                      { id: 'playstation', icon: <Gamepad2 size={19} />, label: 'بلايستيشن', roles: ['admin', 'cashier'] }, // متاح للكاشير
-                      { id: 'hr', icon: <Users size={19} />, label: 'الرواتب', roles: ['admin'] },
-                      { id: 'expenses', icon: <Receipt size={19} />, label: 'المصروفات', roles: ['admin'] },
-                    ].filter(item => item.roles.includes(currentUser?.role)).map(item => (
+                    {navItems.filter(item => item.roles.includes(currentUser?.role)).map(item => (
                       <button key={item.id} onClick={() => { setField('currentRoute', item.id); setField('isMobileMenuOpen', false); }}
                         className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold transition-all text-sm ${currentRoute === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-white'}`}>
                         {item.icon} {item.label}
@@ -975,8 +814,7 @@ export default function App() {
                     {currentUser.role === 'admin' && (
                       <div className="flex items-center justify-between mb-2 px-1">
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الضريبة (14%)</span>
-                        <button onClick={() => { const v = !isTaxEnabled; setField('isTaxEnabled', v); syncToCloud({ isTaxEnabled: v }); }}
-                          className={`w-12 h-6 rounded-full transition-colors relative ${isTaxEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                        <button onClick={() => { const v = !isTaxEnabled; setField('isTaxEnabled', v); syncToCloud({ isTaxEnabled: v }); }} className={`w-12 h-6 rounded-full transition-colors relative ${isTaxEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
                           <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isTaxEnabled ? 'left-7' : 'left-1'}`} />
                         </button>
                       </div>
@@ -989,12 +827,14 @@ export default function App() {
               </>
             )}
 
-            {/* ===== Main content area ===== */}
+            {/* ===== MAIN CONTENT ===== */}
             <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
               {/* Header */}
               <header className="p-3 md:p-4 md:px-8 flex justify-between items-center shadow-sm z-30 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  {(currentUser.role === 'admin' || currentUser.role === 'cashier') && <button onClick={() => setField('isMobileMenuOpen', true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19} /></button>}
+                  {(currentUser.role === 'admin' || currentUser.role === 'cashier') && (
+                    <button onClick={() => setField('isMobileMenuOpen', true)} className="lg:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-white"><Menu size={19} /></button>
+                  )}
                   <h1 className="font-black text-sm md:text-xl truncate max-w-[160px] md:max-w-none text-slate-800 dark:text-white">
                     {currentUser.role === 'super_admin' ? (globalSettings.appName || 'المنصة') : currentUser.role === 'cashier' ? `كاشير — ${currentUser.cafeName}` : currentUser.cafeName}
                   </h1>
@@ -1010,16 +850,14 @@ export default function App() {
                   </button>
                   <span className="hidden md:block text-sm font-black text-slate-700 dark:text-slate-300">{currentUser.name}</span>
                   {(currentUser.role === 'super_admin' || currentUser.role === 'cashier') && (
-                    <button onClick={handleLogout} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 rounded-lg transition-colors">
-                      <LogOut size={17} />
-                    </button>
+                    <button onClick={handleLogout} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 rounded-lg transition-colors"><LogOut size={17} /></button>
                   )}
                 </div>
               </header>
 
               <div className="flex-1 overflow-auto custom-scrollbar relative">
 
-                {/* ===== Cashier: No active shift gate ===== */}
+                {/* ===== CASHIER SHIFT GATE ===== */}
                 {currentUser.role === 'cashier' && !activeShift && activeModal !== 'closeShift' ? (
                   <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
                     <div className="bg-white dark:bg-slate-800 p-6 md:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700">
@@ -1045,11 +883,7 @@ export default function App() {
                   </div>
 
                 ) : currentUser.role === 'super_admin' ? (
-                  /* ===== Super Admin Dashboard ===== */
-                  <div className="p-4 md:p-8 max-w-6xl mx-auto">
-                    {/* ... SaaS UI ... */}
-                    ) : currentUser.role === 'super_admin' ? (
-                  /* ===== Super Admin Dashboard ===== */
+                  /* ===== SUPER ADMIN ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                       <div className="flex items-center gap-3"><Building2 className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">إدارة المنصة</h2></div>
@@ -1090,7 +924,6 @@ export default function App() {
                         <button onClick={() => { setField('orderType', 'takeaway'); setField('activeTableId', null); }} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'takeaway' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400'}`}>تيك أواي</button>
                         <button onClick={() => setField('orderType', 'dine_in')} className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${orderType === 'dine_in' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400'}`}>صالة</button>
                       </div>
-
                       {orderType === 'dine_in' && !activeTableId && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                           {tables.map(t => {
@@ -1106,14 +939,12 @@ export default function App() {
                           })}
                         </div>
                       )}
-
                       <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
                         <button onClick={() => setField('selectedCategoryFilter', 'all')} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>الكل</button>
                         {categories.map(cat => (
                           <button key={cat.id} onClick={() => setField('selectedCategoryFilter', cat.id)} className={`whitespace-nowrap px-5 py-2 rounded-xl font-bold text-sm transition-all ${selectedCategoryFilter === cat.id ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>{cat.name}</button>
                         ))}
                       </div>
-
                       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto pr-1 custom-scrollbar">
                         {(selectedCategoryFilter === 'all' ? products : products.filter(p => p.category === selectedCategoryFilter)).map(p => {
                           const op = getProductPriceWithOffer(p);
@@ -1135,20 +966,13 @@ export default function App() {
                         {products.length === 0 && <div className="col-span-full mt-10 text-center text-slate-400"><Coffee className="w-12 h-12 mx-auto mb-2 opacity-30" /><p className="font-bold text-sm">لا توجد منتجات مضافة بعد</p></div>}
                       </div>
                     </div>
-
-                    {/* Mobile cart bar */}
+                    {/* Mobile bottom bar */}
                     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 p-3 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 flex justify-between items-center">
                       <div className="font-black text-base text-indigo-600 dark:text-indigo-400">
-                        {(() => {
-                          const sub = cart.reduce((x, i) => x + (i.price * i.quantity), 0);
-                          const dv = parseFloat(discountValue) || 0;
-                          const d = currentUser.role === 'admin' && dv > 0 ? (discountType === 'percent' ? Math.min(sub, sub * dv / 100) : Math.min(sub, dv)) : 0;
-                          return ((sub - d) * (isTaxEnabled ? 1.14 : 1)).toFixed(2);
-                        })()} ج
+                        {(() => { const sub = cart.reduce((x, i) => x + (i.price * i.quantity), 0); const dv = parseFloat(discountValue) || 0; const d = currentUser.role === 'admin' && dv > 0 ? (discountType === 'percent' ? Math.min(sub, sub * dv / 100) : Math.min(sub, dv)) : 0; return ((sub - d) * (isTaxEnabled ? 1.14 : 1)).toFixed(2); })()} ج
                       </div>
                       <button onClick={() => setField('isMobileCartOpen', true)} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg"><ShoppingCart size={17} /> السلة ({cart.length})</button>
                     </div>
-
                     {/* Cart panel */}
                     <div className={`w-full lg:w-[350px] xl:w-[420px] bg-white dark:bg-slate-800 rounded-t-3xl lg:rounded-3xl shadow-2xl lg:shadow-md border border-slate-200 dark:border-slate-700 flex flex-col h-[85vh] lg:h-full fixed lg:relative bottom-0 left-0 right-0 z-40 transition-transform duration-300 ${isMobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
                       <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 rounded-t-3xl flex justify-between items-center shrink-0">
@@ -1170,10 +994,7 @@ export default function App() {
                             <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm">
                               <button onClick={() => setField('cart', cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i))} className="text-emerald-500 p-1 hover:bg-emerald-50 dark:hover:bg-slate-700 rounded-lg"><Plus size={13} /></button>
                               <span className="font-black w-5 text-center text-xs text-slate-800 dark:text-white">{item.quantity}</span>
-                              <button onClick={() => {
-                                if (item.quantity > 1) setField('cart', cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i));
-                                else setField('cart', cart.filter(i => i.id !== item.id));
-                              }} className="text-rose-500 p-1 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg"><Minus size={13} /></button>
+                              <button onClick={() => { if (item.quantity > 1) setField('cart', cart.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i)); else setField('cart', cart.filter(i => i.id !== item.id)); }} className="text-rose-500 p-1 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg"><Minus size={13} /></button>
                             </div>
                           </div>
                         ))}
@@ -1224,7 +1045,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'dashboard' && currentUser.role === 'admin' ? (
-                  /* ===== Dashboard ===== */
+                  /* ===== DASHBOARD ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white">الملخص العام</h2>
@@ -1252,7 +1073,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'reports' && currentUser.role === 'admin' ? (
-                  /* ===== Reports ===== */
+                  /* ===== REPORTS ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
                     <div className="flex items-center gap-3 mb-2"><FileText className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">التقارير والتصدير</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
@@ -1298,7 +1119,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'shifts' && currentUser.role === 'admin' ? (
-                  /* ===== Shifts ===== */
+                  /* ===== SHIFTS ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-3 mb-8"><ClipboardList className="text-indigo-600 w-8 h-8" /><h2 className="text-3xl font-black text-slate-800 dark:text-slate-100">سجل الورديات</h2></div>
                     <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -1332,7 +1153,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'inventory' && currentUser.role === 'admin' ? (
-                  /* ===== Inventory ===== */
+                  /* ===== INVENTORY ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Package className="text-indigo-500 w-8 h-8" /> المواد الخام</h2>
@@ -1362,7 +1183,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'products' && currentUser.role === 'admin' ? (
-                  /* ===== Products ===== */
+                  /* ===== PRODUCTS ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Coffee className="text-indigo-500 w-8 h-8" /> المنتجات</h2>
@@ -1396,7 +1217,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'offers' && (currentUser.role === 'admin' || currentUser.role === 'cashier') ? (
-                  /* ===== Offers ===== (يتم عرضها للـ admin والكاشير ولكن الكاشير لا يرى أزرار التعديل) */
+                  /* ===== OFFERS — admin + cashier (cashier: read only) ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Tag className="text-indigo-500 w-8 h-8" /> العروض والخصومات</h2>
@@ -1404,7 +1225,6 @@ export default function App() {
                         <button onClick={() => openModal('offer')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold flex justify-center gap-2 shadow-lg text-sm w-full sm:w-auto"><Plus size={17} /> عرض جديد</button>
                       )}
                     </div>
-                    {/* الكاشير بيشوف العروض الفعالة بس، المدير بيشوف كله */}
                     {(() => {
                       const visibleOffers = currentUser.role === 'admin' ? offers : offers.filter(o => o.isActive);
                       if (visibleOffers.length === 0) {
@@ -1424,7 +1244,6 @@ export default function App() {
                                   {offer.category && <div className="flex justify-between"><span className="text-slate-500 font-bold">الفئة:</span><span className="font-bold text-indigo-600">{offer.category}</span></div>}
                                   {offer.endDate && <div className="flex justify-between"><span className="text-slate-500 font-bold">حتى:</span><span className="font-bold">{offer.endDate}</span></div>}
                                 </div>
-                                {/* أزرار التحكم تظهر للمدير فقط */}
                                 {currentUser.role === 'admin' && (
                                   <div className="flex gap-2 mt-4">
                                     <button onClick={() => { const newOffers = offers.map(o => o.id === offer.id ? { ...o, isActive: !o.isActive } : o); setField('offers', newOffers); syncToCloud({ offers: newOffers }); }} className={`flex-1 py-2 rounded-xl text-xs font-black transition-colors ${offer.isActive ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{offer.isActive ? 'إيقاف' : 'تفعيل'}</button>
@@ -1440,7 +1259,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'playstation' && (currentUser.role === 'admin' || currentUser.role === 'cashier') ? (
-                  /* ===== PlayStation ===== (متاحة للكاشير والمدير مع حماية الأزرار) */
+                  /* ===== PLAYSTATION — admin + cashier ===== */
                   <div className="p-4 md:p-8 max-w-6xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Gamepad2 className="text-indigo-500 w-8 h-8" /> بلايستيشن</h2>
@@ -1453,25 +1272,37 @@ export default function App() {
                         <div className="col-span-full text-center py-16 text-slate-400"><Gamepad2 className="w-16 h-16 mx-auto mb-4 opacity-20" /><p className="font-bold">لا توجد أجهزة مضافة</p></div>
                       ) : psDevices.map(device => {
                         const aS = psSessions.find(s => s.deviceId === device.id && s.status === 'active');
-                        // حساب التقريب لحظياً للعرض فقط
                         const durMin = aS ? Math.floor((Date.now() - aS.startTime) / 60000) : 0;
-                        const cost = aS ? (Math.ceil(durMin / 15) * 15 / 60) * device.hourlyRate : 0;
-                        
+                        // عرض تكلفة تقريبية بالربع ساعة لحظياً
+                        const displayCost = aS ? (Math.ceil(Math.max(durMin, 1) / 15) * 15 / 60) * device.hourlyRate : 0;
                         return (
                           <div key={device.id} className={`bg-white dark:bg-slate-800 p-5 rounded-3xl border-2 shadow-sm ${aS ? 'border-emerald-400 dark:border-emerald-600' : 'border-slate-200 dark:border-slate-700'}`}>
-                            <div className="flex justify-between items-start mb-4"><div><h3 className="font-black text-xl text-slate-800 dark:text-white">{device.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold text-sm mt-1">{device.hourlyRate} ج / ساعة</p></div><span className={`px-3 py-1.5 rounded-xl text-xs font-black ${aS ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{aS ? 'شغال' : 'فاضي'}</span></div>
-                            {aS && <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 mb-4 space-y-1"><p className="text-xs font-bold text-emerald-700">بدأ: {aS.startTimeStr}</p><p className="text-xs font-bold text-emerald-700">المدة الفعلية: {durMin} دقيقة</p><p className="text-base font-black text-emerald-600">التكلفة (تقريب لربع ساعة): {cost.toFixed(2)} ج</p></div>}
+                            <div className="flex justify-between items-start mb-4">
+                              <div><h3 className="font-black text-xl text-slate-800 dark:text-white">{device.name}</h3><p className="text-indigo-600 dark:text-indigo-400 font-bold text-sm mt-1">{device.hourlyRate} ج / ساعة</p></div>
+                              <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${aS ? 'bg-emerald-100 text-emerald-700 animate-pulse' : 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{aS ? 'شغال' : 'فاضي'}</span>
+                            </div>
+                            {aS && (
+                              <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 mb-4 space-y-1">
+                                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">بدأ: {aS.startTimeStr}</p>
+                                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">المدة الفعلية: {durMin} دقيقة</p>
+                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-300">المحسوبة (تقريب ربع ساعة): {Math.ceil(Math.max(durMin, 1) / 15) * 15} دقيقة</p>
+                                <p className="text-base font-black text-emerald-600 dark:text-emerald-400">التكلفة المتوقعة: {displayCost.toFixed(2)} ج</p>
+                              </div>
+                            )}
                             {aS ? (
-                              <button onClick={() => endPsSession(aS.id)} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Power size={16} /> إنهاء وإصدار فاتورة</button>
+                              <button onClick={() => endPsSession(aS.id)} className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-colors">
+                                <Power size={16} /> إنهاء وإصدار فاتورة
+                              </button>
                             ) : (
                               <button onClick={() => {
-                                if (currentUser.role === 'cashier' && !activeShift) { showToast('يجب استلام عهدة أولاً لبدء الجلسات!', 'error'); return; }
+                                if (currentUser.role === 'cashier' && !activeShift) { showToast('يجب استلام عهدة أولاً!', 'error'); return; }
                                 startPsSession(device.id);
-                              }} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2"><Play size={16} /> بدء جلسة</button>
+                              }} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-black flex items-center justify-center gap-2 transition-colors">
+                                <Play size={16} /> بدء جلسة
+                              </button>
                             )}
-                            {/* حذف الجهاز متاح للمدير فقط */}
                             {currentUser.role === 'admin' && (
-                              <button onClick={() => setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' })} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1">حذف الجهاز</button>
+                              <button onClick={() => setState({ deleteConfig: { type: 'psDevice', id: device.id }, activeModal: 'delete' })} className="mt-2 w-full text-xs text-rose-400 hover:text-rose-600 font-bold py-1 transition-colors">حذف الجهاز</button>
                             )}
                           </div>
                         );
@@ -1483,17 +1314,18 @@ export default function App() {
                         <div className="overflow-x-auto custom-scrollbar">
                           <table className="w-full text-right min-w-[600px]">
                             <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold text-sm">
-                              <tr><th className="p-4">الجهاز</th><th className="p-4">الكاشير</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4 text-center">المدة المحسوبة</th><th className="p-4 text-center">التكلفة</th></tr>
+                              <tr><th className="p-4">الجهاز</th><th className="p-4">الكاشير</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4 text-center">المدة الفعلية</th><th className="p-4 text-center">المحسوبة</th><th className="p-4 text-center">التكلفة</th></tr>
                             </thead>
                             <tbody>
                               {[...psSessions.filter(s => s.status === 'ended')].reverse().slice(0, 20).map(s => (
-                                <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 text-sm">
+                                <tr key={s.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-sm">
                                   <td className="p-4 font-bold text-slate-800 dark:text-white">{s.deviceName}</td>
-                                  <td className="p-4 text-slate-500">{s.cashierName}</td>
-                                  <td className="p-4 text-xs text-slate-500">{s.startTimeStr}</td>
-                                  <td className="p-4 text-xs text-slate-500">{s.endTimeStr}</td>
-                                  <td className="p-4 text-center font-bold">{s.durationMin} دقيقة</td>
-                                  <td className="p-4 text-center font-black text-indigo-600">{s.cost.toFixed(2)} ج</td>
+                                  <td className="p-4 text-slate-500 dark:text-slate-400">{s.cashierName}</td>
+                                  <td className="p-4 text-xs text-slate-500 dark:text-slate-400">{s.startTimeStr}</td>
+                                  <td className="p-4 text-xs text-slate-500 dark:text-slate-400">{s.endTimeStr}</td>
+                                  <td className="p-4 text-center font-bold text-slate-600 dark:text-slate-300">{s.actualMin} دقيقة</td>
+                                  <td className="p-4 text-center font-bold text-indigo-500">{s.durationMin} دقيقة</td>
+                                  <td className="p-4 text-center font-black text-indigo-600 dark:text-indigo-400">{s.cost.toFixed(2)} ج</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1504,7 +1336,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'tables' && currentUser.role === 'admin' ? (
-                  /* ===== Tables ===== */
+                  /* ===== TABLES ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Utensils className="text-indigo-500 w-8 h-8" /> الصالة والطاولات</h2>
@@ -1592,7 +1424,7 @@ export default function App() {
                   </div>
 
                 ) : currentRoute === 'expenses' && currentUser.role === 'admin' ? (
-                  /* ===== Expenses ===== */
+                  /* ===== EXPENSES ===== */
                   <div className="p-4 md:p-8 max-w-7xl mx-auto">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
                       <h2 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Receipt className="text-indigo-500 w-8 h-8" /> المصروفات</h2>
@@ -1623,10 +1455,7 @@ export default function App() {
               </div>
             </main>
 
-            {/* ========================================
-                MODALS
-                ======================================== */}
-
+            {/* ===== MODALS ===== */}
             {activeModal === 'tenant' && (
               <CustomModal title={formData.id && !formData.isNew ? "تعديل الكافيه" : "إضافة كافيه جديد"} onClose={closeModal}>
                 <form onSubmit={saveTenant} className="space-y-4">
@@ -1635,7 +1464,7 @@ export default function App() {
                   <div><label className="block text-sm font-black mb-2 dark:text-white">تاريخ انتهاء الاشتراك</label><input required type="date" name="subscriptionEnds" value={formData.subscriptionEnds || ''} onChange={handleFormChange} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white" /></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">إيميل المدير</label><input required type="email" name="adminEmail" value={formData.adminEmail || ''} onChange={handleFormChange} placeholder="admin.c2@coffeeerp.app" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white" dir="ltr" /></div>
                   <div><label className="block text-sm font-black mb-2 dark:text-white">إيميل الكاشير</label><input required type="email" name="cashierEmail" value={formData.cashierEmail || ''} onChange={handleFormChange} placeholder="cashier.c2@coffeeerp.app" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white" dir="ltr" /></div>
-                  <p className="text-xs text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl">⚠️ تأكد من إنشاء هذه الإيميلات في Firebase Authentication بكلمات مرور مناسبة.</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-900/20 p-3 rounded-xl">⚠️ تأكد من إنشاء هذه الإيميلات في Firebase Authentication.</p>
                   <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-black text-lg transition-colors shadow-lg mt-2">حفظ</button>
                 </form>
               </CustomModal>
@@ -1667,19 +1496,10 @@ export default function App() {
             {activeModal === 'product' && (
               <CustomModal title="إضافة صنف" onClose={closeModal}>
                 <form onSubmit={(e) => { e.preventDefault(); genericSave('products', products, { name: e.target.pname.value, category: e.target.category.value, price: parseFloat(e.target.price.value), image: formData.image || null, expiryDate: e.target.expiryDate.value || null, recipe: formData.recipe?.filter(r => r.materialId && r.amount > 0) || [] }); }} className="space-y-4">
-                  
                   <div className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors overflow-hidden">
                     <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                    {formData.image ? (
-                      <img src={formData.image} alt="preview" className="h-20 object-contain rounded-lg shadow-sm" />
-                    ) : (
-                      <>
-                        <ImageIcon className="text-slate-400 w-8 h-8" />
-                        <span className="text-xs font-bold text-slate-500">اضغط لاختيار صورة (اختياري)</span>
-                      </>
-                    )}
+                    {formData.image ? <img src={formData.image} alt="preview" className="h-20 object-contain rounded-lg shadow-sm" /> : <><ImageIcon className="text-slate-400 w-8 h-8" /><span className="text-xs font-bold text-slate-500">اضغط لاختيار صورة (اختياري)</span></>}
                   </div>
-
                   <input required name="pname" value={formData.pname || formData.name || ''} onChange={e => setState({ formData: { ...formData, pname: e.target.value, name: e.target.value } })} placeholder="اسم الصنف" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm" />
                   <div className="grid grid-cols-2 gap-4">
                     <input required name="category" value={formData.category || ''} onChange={handleFormChange} placeholder="القسم" className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:border-indigo-500 font-bold text-slate-800 dark:text-white text-sm" />
